@@ -13,10 +13,74 @@ import org.apache.commons.validator.ISBNValidator;
 public class Slouceni {
     
     static final Logger logger = Logger.getLogger(Slouceni.class.getName());
+    
+    public static String export(String xml){
+        
+        try {
+            String retval = "";
+            XMLReader xmlReader = new XMLReader();
+            xmlReader.loadXml(xml);
+            
+            
+            //ISBN
+            String pole = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='020']/marc:subfield[@code='a']/text()");
+            retval += pole + "\t";
+            
+            //ISSN
+            pole = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='022']/marc:subfield[@code='a']/text()");
+            retval += pole + "\t";
+            
+            //ccnb
+            pole = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='015']/marc:subfield[@code='a']/text()");
+            retval += pole + "\t";
+            
+            //Check 245n číslo části 
+            String f245nraw = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='n']/text()");
+            
+            
+            //Pole 250 údaj o vydání (nechat pouze numerické znaky) (jen prvni cislice)
+            String f250a = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='250']/marc:subfield[@code='a']/text()");
+            
+            
+            //Pole 100 autor – osobní jméno (ind1=1 →  prijmeni, jmeno; ind1=0 → jmeno, prijmeni.  
+            //Obratit v pripade ind1=1, jinak nechat)
+            String f100a = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='100']/marc:subfield[@code='a']/text()");
+            String ind1 = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='100']/@ind1");
+            if("1".equals(ind1) && !"".equals(f100a)){
+                String[] split = f100a.split(",", 2);
+                if(split.length == 2){
+                    f100a = split[1] + split[0];
+                }
+            }
+            
+            //vyber poli
+            retval += xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='a']/text()") +
+                    "\t" +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='b']/text()") + "\t" +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='c']/text()") + "\t" +
+                    f245nraw  + "\t" +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='p']/text()")  + "\t" +
+                    f250a  + "\t" +
+                    f100a  + "\t" +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='110']/marc:subfield[@code='a']/text()")  + "\t" +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='111']/marc:subfield[@code='a']/text()") + "\t" +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='260']/marc:subfield[@code='a']/text()") + "\t" +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='260']/marc:subfield[@code='b']/text()") + "\t" +
+                    onlyLeadNumbers(xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='260']/marc:subfield[@code='c']/text()")) + "\t";
+
+            return retval;
+        } catch (Exception ex) {
+           logger.log(Level.SEVERE, null, ex);
+        }
+        return null;
+    }
+    
     public static String generateMD5(String xml){
         try {
             XMLReader xmlReader = new XMLReader();
             xmlReader.loadXml(xml);
+            
+            
             //ISBN
             String pole = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='020']/marc:subfield[@code='a']/text()");
             pole = pole.toUpperCase();

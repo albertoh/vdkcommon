@@ -58,8 +58,6 @@ public class XMLReader {
 
             InputSource source = new InputSource(new StringReader(xml));
             doc = builder.parse(source);
-
-
     }
     
     public Document getDoc(){
@@ -169,14 +167,6 @@ public class XMLReader {
             IOException, XPathExpressionException {
 
         XPathExpression expr = xpath.compile(xPath);
-
-        /*
-        Object result = expr.evaluate(doc, XPathConstants.NODE);
-        Node node = (Node) result;
-        if(node!=null)
-        return node.getNodeValue();
-        else return "";
-         */
 
         Object result = expr.evaluate(doc, XPathConstants.NODESET);
         NodeList nodes = (NodeList) result;
