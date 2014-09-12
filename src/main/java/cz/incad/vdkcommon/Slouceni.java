@@ -2,6 +2,7 @@ package cz.incad.vdkcommon;
 
 import cz.incad.utils.RomanNumber;
 import cz.incad.vdkcommon.xml.XMLReader;
+import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.validator.ISBNValidator;
@@ -75,6 +76,41 @@ public class Slouceni {
         return null;
     }
     
+    public static String generateMD5(String[] parts){
+        
+        try {
+            
+            //ISBN
+            String pole = parts[0];
+            //logger.log(Level.INFO, "isbn: {0}", pole);
+            ISBNValidator val =  new ISBNValidator();
+            if(!"".equals(pole) && val.isValid(pole)){
+                pole = pole.toUpperCase();
+                return MD5.generate(new String[]{pole});
+            }
+            
+            //ISSN
+            pole = parts[1];
+            //logger.log(Level.INFO, "issn: {0}", pole);
+            if(!"".equals(pole) && val.isValid(pole)){
+                pole = pole.toUpperCase();
+                return MD5.generate(new String[]{pole});
+            }
+            
+            //ccnb
+            pole = parts[3];
+           //logger.log(Level.INFO, "ccnb: {0}", pole);
+            if (!"".equals(pole)) {
+                return MD5.generate(new String[]{pole});
+            }
+            
+            //vyber poli
+            return MD5.generate(Arrays.copyOfRange(parts, 4, 10));
+        } catch (Exception ex) {
+           logger.log(Level.SEVERE, null, ex);
+        }
+        return null;
+    }
     public static String generateMD5(String xml){
         try {
             XMLReader xmlReader = new XMLReader();

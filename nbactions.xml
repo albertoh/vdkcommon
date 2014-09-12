@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+        <action>
+            <actionName>CUSTOM-tree</actionName>
+            <displayName>tree</displayName>
+            <goals>
+                <goal>dependency:tree</goal>
+                <goal>-DoutputType=graphml</goal>
+                <goal>-DoutputFile=dependency.graphml</goal>
+            </goals>
+        </action>
+    </actions>
