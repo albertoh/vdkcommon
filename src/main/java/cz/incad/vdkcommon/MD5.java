@@ -44,7 +44,9 @@ public class MD5 {
     public static String generate(String[] params) {
         String key = "";
         for(String s: params){
-            key += s.replaceAll(" ", "").toLowerCase();
+            if(s!=null){
+                key += s.replaceAll(" ", "").toLowerCase();
+            }
         }
         return generate(normalize(key));
     }
