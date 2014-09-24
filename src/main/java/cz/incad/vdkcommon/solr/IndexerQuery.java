@@ -4,16 +4,13 @@ import cz.incad.vdkcommon.SolrIndexerCommiter;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.Iterator;
 import org.apache.commons.io.IOUtils;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.client.solrj.util.ClientUtils;
-import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
-import org.apache.solr.common.params.SolrParams;
 
 /**
  *
@@ -25,22 +22,15 @@ public class IndexerQuery {
 
     }
 
-    public static String queryOneField(String q, String field) throws SolrServerException {
+    public static SolrDocumentList queryOneField(String q, String[] fields, String[] fq) throws SolrServerException, IOException {
         SolrServer server = SolrIndexerCommiter.getServer();
         SolrQuery query = new SolrQuery();
         query.setQuery(q);
+        query.setFilterQueries(fq);
+        query.setFields(fields);
+        query.setRows(100);
         QueryResponse rsp = server.query(query);
-        SolrDocumentList docs = rsp.getResults();
-
-        Iterator<SolrDocument> iter = docs.iterator();
-
-        if (iter.hasNext()) {
-            SolrDocument resultDoc = iter.next();
-
-            return (String) resultDoc.getFirstValue(field);
-        } else {
-            return null;
-        }
+        return rsp.getResults();
     }
     private String xml(String q) throws MalformedURLException, IOException {
         SolrQuery query = new SolrQuery(q);

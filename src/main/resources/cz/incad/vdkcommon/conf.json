@@ -1,0 +1,4 @@
+{
+    "solrHost": "http://localhost:8080/solr",
+    "solrCore": "vdk_md5"
+}

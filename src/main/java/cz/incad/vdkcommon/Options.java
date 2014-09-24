@@ -1,0 +1,59 @@
+package cz.incad.vdkcommon;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.apache.commons.io.FileUtils;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+/**
+ *
+ * @author alberto
+ */
+public class Options {
+    
+    public static final Logger LOGGER = Logger.getLogger(Options.class.getName());
+
+    private static Options _sharedInstance = null;
+    private final JSONObject conf;
+
+    public synchronized static Options getInstance() throws IOException, JSONException {
+        if (_sharedInstance == null) {
+            _sharedInstance = new Options();
+        }
+        return _sharedInstance;
+    }
+
+    public Options() throws IOException, JSONException {
+        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + "conf.json";
+        File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/conf.json"));
+
+        String json = FileUtils.readFileToString(fdef, "UTF-8");
+        conf = new JSONObject(json);
+
+        path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + "conf.json";
+        File f = new File(path);
+        if (f.exists() && f.canRead()) {
+            json = FileUtils.readFileToString(f, "UTF-8");
+            JSONObject confCustom = new JSONObject(json);
+            Iterator keys = confCustom.keys();
+            while (keys.hasNext() ) {
+                String key = (String) keys.next();
+                LOGGER.log(Level.INFO, "key {0} will be overrided", key);
+                conf.put(key, confCustom.get(key));
+            }
+        }
+
+    }
+
+    public String getString(String key, String defVal) {
+        return conf.optString(key, defVal);
+    }
+
+    public int getInt(String key, int defVal) {
+        return conf.optInt(key, defVal);
+    }
+}

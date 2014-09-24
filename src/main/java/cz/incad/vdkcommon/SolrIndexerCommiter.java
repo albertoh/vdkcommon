@@ -13,7 +13,6 @@ import java.net.ProtocolException;
 import java.net.URL;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.impl.HttpSolrServer;
-import org.apache.solr.client.solrj.impl.XMLResponseParser;
 
 /**
  *
@@ -21,11 +20,14 @@ import org.apache.solr.client.solrj.impl.XMLResponseParser;
  */
 public class SolrIndexerCommiter {
 
-    public static String HOST = "http://localhost:8080/solr";
-    public static String CORE = "vdk_md5";
+//    public static String HOST = "http://localhost:8080/solr";
+//    public static String CORE = "vdk_md5";
 
-    public static SolrServer getServer() {
-        HttpSolrServer server = new HttpSolrServer(String.format("%s/%s/", HOST, CORE));
+    public static SolrServer getServer() throws IOException {
+        Options opts = Options.getInstance();
+        HttpSolrServer server = new HttpSolrServer(String.format("%s/%s/", 
+                opts.getString("solrHost", "http://localhost:8080/solr"), 
+                opts.getString("solrCore", "vdk_md5")));
         server.setMaxRetries(1); // defaults to 0.  > 1 not recommended.
         server.setConnectionTimeout(5000); // 5 seconds to establish TCP
         
@@ -45,7 +47,10 @@ public class SolrIndexerCommiter {
 
     public static String postData(String dataStr)
             throws Exception {
-        return postData(String.format("%s/%s/update", HOST, CORE), dataStr);
+        Options opts = Options.getInstance();
+        return postData(String.format("%s/%s/update", 
+                opts.getString("solrHost", "http://localhost:8080/solr"), 
+                opts.getString("solrCore", "vdk_md5")), dataStr);
     }
 
     public static String postData(String url, String dataStr)
