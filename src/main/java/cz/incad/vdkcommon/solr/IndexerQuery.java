@@ -1,5 +1,6 @@
 package cz.incad.vdkcommon.solr;
 
+import cz.incad.vdkcommon.Options;
 import cz.incad.vdkcommon.SolrIndexerCommiter;
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -32,19 +33,28 @@ public class IndexerQuery {
         QueryResponse rsp = server.query(query);
         return rsp.getResults();
     }
-    private String xml(String q) throws MalformedURLException, IOException {
+    
+    public static String xml(String q) throws MalformedURLException, IOException {
         SolrQuery query = new SolrQuery(q);
-// set indent == true, so that the xml output is formatted
         query.set("indent", true);
 
-// use org.apache.solr.client.solrj.util.ClientUtils 
-// to make a URL compatible query string of your SolrQuery
-        String urlQueryString = ClientUtils.toQueryString(query, false);
+        return xml(query);
+    }
+    
+    public static String xml(SolrQuery query) throws MalformedURLException, IOException {
+        
+        query.set("indent", true);
 
-        String solrURL = "http://localhost:8080/solr/shard-1/select";
+    // use org.apache.solr.client.solrj.util.ClientUtils 
+        // to make a URL compatible query string of your SolrQuery
+        String urlQueryString = ClientUtils.toQueryString(query, false);
+        Options opts = Options.getInstance();
+        String solrURL = String.format("%s/%s/select",
+                opts.getString("solrHost", "http://localhost:8080/solr"),
+                opts.getString("solrCore", "vdk_md5"));
         URL url = new URL(solrURL + urlQueryString);
 
-// use org.apache.commons.io.IOUtils to do the http handling for you
+        // use org.apache.commons.io.IOUtils to do the http handling for you
         String xmlResponse = IOUtils.toString(url);
 
         return xmlResponse;

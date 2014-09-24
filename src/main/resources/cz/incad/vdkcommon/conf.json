@@ -1,4 +1,10 @@
 {
     "solrHost": "http://localhost:8080/solr",
-    "solrCore": "vdk_md5"
+    "solrCore": "vdk_md5",
+    "facets": ["{!ex=dt}zdroj", 
+                    "rokvydani", 
+                    "bohemika",
+                    "ldr19",
+                    "status",
+                    "pocet_exemplaru"]
 }

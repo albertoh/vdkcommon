@@ -6,6 +6,7 @@ import java.util.Iterator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.io.FileUtils;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -55,5 +56,14 @@ public class Options {
 
     public int getInt(String key, int defVal) {
         return conf.optInt(key, defVal);
+    }
+    
+    public String[] getStrings(String key){
+        JSONArray arr = conf.optJSONArray(key);
+        String[] ret = new String[arr.length()];
+        for(int i = 0; i<arr.length(); i++){
+            ret[i] = arr.getString(i);
+        }      
+        return ret;
     }
 }
