@@ -6,5 +6,9 @@
                     "bohemika",
                     "ldr19",
                     "status",
-                    "pocet_exemplaru"]
+                    "pocet_exemplaru"],
+    "otherParams":{
+        "f.rokvydani.facet.limit": -1,
+        "f.rokvydani.facet.sort": false
+    }
 }
