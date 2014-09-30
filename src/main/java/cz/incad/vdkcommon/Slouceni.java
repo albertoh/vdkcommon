@@ -3,7 +3,6 @@ package cz.incad.vdkcommon;
 import cz.incad.utils.RomanNumber;
 import cz.incad.vdkcommon.xml.XMLReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.util.Arrays;
 import java.util.HashMap;
