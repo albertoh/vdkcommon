@@ -19,8 +19,10 @@ import org.apache.solr.common.SolrDocumentList;
  */
 public class IndexerQuery {
 
-    public static void query(String q) {
-
+    public static SolrDocumentList query(SolrQuery query) throws SolrServerException, IOException {
+        SolrServer server = SolrIndexerCommiter.getServer();
+        QueryResponse rsp = server.query(query);
+        return rsp.getResults();
     }
 
     public static SolrDocumentList queryOneField(String q, String[] fields, String[] fq) throws SolrServerException, IOException {
@@ -55,7 +57,7 @@ public class IndexerQuery {
         URL url = new URL(solrURL + urlQueryString);
 
         // use org.apache.commons.io.IOUtils to do the http handling for you
-        String xmlResponse = IOUtils.toString(url);
+        String xmlResponse = IOUtils.toString(url, "UTF-8");
 
         return xmlResponse;
     }

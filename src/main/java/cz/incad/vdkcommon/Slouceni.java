@@ -94,6 +94,12 @@ public class Slouceni {
         map.put("110a", parts[8]);
         map.put("111a", parts[9]);
         map.put("260a", parts[10]);
+        if(parts.length>11){
+            map.put("cena", parts[11]);
+        }
+        if(parts.length>12){
+            map.put("comment", parts[12]);
+        }
         return map;
     }
 
