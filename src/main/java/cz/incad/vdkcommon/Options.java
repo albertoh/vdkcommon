@@ -36,7 +36,6 @@ public class Options {
         String json = FileUtils.readFileToString(fdef, "UTF-8");
         conf = new JSONObject(json);
 
-        path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + "conf.json";
         File f = new File(path);
         if (f.exists() && f.canRead()) {
             json = FileUtils.readFileToString(f, "UTF-8");
