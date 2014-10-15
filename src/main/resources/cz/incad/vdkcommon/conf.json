@@ -1,12 +1,14 @@
 {
     "solrHost": "http://localhost:8080/solr",
     "solrCore": "vdk_md5",
+    "indexerXSL": "vdk_md5.xsl",
     "facets": ["{!ex=dt}zdroj", 
-                    "rokvydani", 
-                    "bohemika",
-                    "ldr19",
-                    "status",
-                    "pocet_exemplaru"],
+                "rokvydani", 
+                "bohemika",
+                "ldr19",
+                "status",
+                "pocet_exemplaru"
+                ],
     "user_facets": ["nabidka", "poptavka"],
     "otherParams":{
         "f.rokvydani.facet.limit": -1,

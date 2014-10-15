@@ -4,6 +4,7 @@ import cz.incad.utils.RomanNumber;
 import cz.incad.vdkcommon.xml.XMLReader;
 import java.io.IOException;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -11,8 +12,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.validator.routines.ISBNValidator;
 import org.json.JSONObject;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVStrategy;
+
+import au.com.bytecode.opencsv.CSVReader;
+import au.com.bytecode.opencsv.CSVWriter;
+import java.util.ArrayList;
 
 /**
  *
@@ -80,39 +83,78 @@ public class Slouceni {
         return null;
     }
 
+    public static String toCSV(String isbn, String issn, String ccnb,
+            String f245, String f245n, String f245p, String f250a,
+            String f100a, String f110a, String f111a, String f260) {
+        try {
+            ArrayList<String> nextLine = new ArrayList<String>();
+            nextLine.add(isbn == null ? "" : isbn);
+            nextLine.add(issn == null ? "" : issn);
+            nextLine.add(ccnb == null ? "" : ccnb);
+            nextLine.add(f245 == null ? "" : f245);
+            nextLine.add(f245n == null ? "" : f245n);
+            nextLine.add(f245p == null ? "" : f245p);
+            nextLine.add(f250a == null ? "" : f250a);
+            nextLine.add(f100a == null ? "" : f100a);
+            nextLine.add(f110a == null ? "" : f110a);
+            nextLine.add(f111a == null ? "" : f111a);
+            nextLine.add(f260 == null ? "" : f260);
+
+            StringWriter sw = new StringWriter();
+            CSVWriter writer = new CSVWriter(sw, '\t', '\"');
+            writer.writeNext((String[]) nextLine.toArray(new String[nextLine.size()]));
+            return sw.toString();
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, null, ex);
+            return "";
+        }
+    }
+
     public static Map csvToMap(String[] parts) {
         Map<String, String> map = new HashMap<String, String>();
-
-        map.put("isbn", parts[0]);
-        map.put("issn", parts[1]);
-        map.put("ccnb", parts[2]);
-        map.put("245a", parts[3]);
-        map.put("245n", parts[4]);
-        map.put("245p", parts[5]);
-        map.put("250a", parts[6]);
-        map.put("100a", parts[7]);
-        map.put("110a", parts[8]);
-        map.put("111a", parts[9]);
-        map.put("260a", parts[10]);
-        if(parts.length>11){
-            map.put("cena", parts[11]);
-        }
-        if(parts.length>12){
-            map.put("comment", parts[12]);
+        try {
+            map.put("isbn", parts[0]);
+            map.put("issn", parts[1]);
+            map.put("ccnb", parts[2]);
+            map.put("245a", parts[3]);
+            map.put("245n", parts[4]);
+            map.put("245p", parts[5]);
+            map.put("250a", parts[6]);
+            map.put("100a", parts[7]);
+            map.put("110a", parts[8]);
+            map.put("111a", parts[9]);
+            map.put("260a", parts[10]);
+            if (parts.length > 11) {
+                map.put("cena", parts[11]);
+            }
+            if (parts.length > 12) {
+                map.put("comment", parts[12]);
+            }
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, "Error parsing csv data: {0}", parts);
+            logger.log(Level.SEVERE, null, ex);
         }
         return map;
     }
 
     public static String csvToJSONString(String csv) {
         try {
-            CSVStrategy strategy = new CSVStrategy('\t', '\"', '#');
-            CSVParser parser = new CSVParser(new StringReader(csv), strategy);
-            String[] parts = parser.getLine();
-            if (parts != null) {
-                return toJSON(csvToMap(parts)).toString();
+
+            CSVReader parser = new CSVReader(new StringReader(csv), '\t', '\"', false);
+            String[] values = parser.readNext();
+            if (values != null) {
+                return toJSON(csvToMap(values)).toString();
             }
+
+//            CSVStrategy strategy = new CSVStrategy('\t', '\"', '#');
+//            CSVParser parser = new CSVParser(new StringReader(csv), strategy);
+//            String[] parts = parser.getLine();
+//            if (parts != null) {
+//                return toJSON(csvToMap(parts)).toString();
+//            }
         } catch (IOException ex) {
-            Logger.getLogger(Slouceni.class.getName()).log(Level.SEVERE, null, ex);
+            logger.log(Level.SEVERE, "Error parsing csv data: {0}", csv);
+            logger.log(Level.SEVERE, null, ex);
         }
         return "";
     }
