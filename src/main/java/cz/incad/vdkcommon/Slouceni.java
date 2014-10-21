@@ -16,6 +16,7 @@ import org.json.JSONObject;
 import au.com.bytecode.opencsv.CSVReader;
 import au.com.bytecode.opencsv.CSVWriter;
 import java.util.ArrayList;
+import org.json.JSONString;
 
 /**
  *
@@ -137,13 +138,25 @@ public class Slouceni {
         return map;
     }
 
+    public static Map csvToMap(String csv) throws IOException {
+        CSVReader parser = new CSVReader(new StringReader(csv), '\t', '\"', false);
+        String[] values = parser.readNext();
+        if (values != null) {
+            return csvToMap(values);
+        } else {
+            return null;
+        }
+    }
+
     public static String csvToJSONString(String csv) {
         try {
 
             CSVReader parser = new CSVReader(new StringReader(csv), '\t', '\"', false);
-            String[] values = parser.readNext();
-            if (values != null) {
-                return toJSON(csvToMap(values)).toString();
+            String[] parts = parser.readNext();
+            if (parts != null) {
+                Map map = csvToMap(parts);
+                String docCode = Slouceni.generateMD5(map);
+                return toJSON(map, docCode ).toString();
             }
 
 //            CSVStrategy strategy = new CSVStrategy('\t', '\"', '#');
@@ -195,10 +208,10 @@ public class Slouceni {
         return null;
     }
 
-    public static JSONObject toJSON(Map<String, String> map) {
+    public static JSONObject toJSON(Map<String, String> map, String docCode) {
         try {
             JSONObject j = new JSONObject(map);
-            j.put("docCode", generateMD5(map));
+            j.put("docCode", docCode);
             return j;
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
@@ -211,25 +224,28 @@ public class Slouceni {
 
             //ISBN
             String pole = map.get("isbn");
-            pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
-            //logger.log(Level.INFO, "isbn: {0}", pole);
             ISBNValidator val = new ISBNValidator();
-            if (!"".equals(pole) && val.isValid(pole)) {
-                return MD5.generate(new String[]{pole});
+            
+            if(pole != null && !pole.equals("")){
+                pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
+                if (!"".equals(pole) && val.isValid(pole)) {
+                    return MD5.generate(new String[]{pole});
+                }
             }
 
             //ISSN
             pole = map.get("issn");
-            pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
-            //logger.log(Level.INFO, "issn: {0}", pole);
-            if (!"".equals(pole) && val.isValid(pole)) {
-                return MD5.generate(new String[]{pole});
+            if(pole != null && !pole.equals("")){
+                pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
+                if (!"".equals(pole) && val.isValid(pole)) {
+                    return MD5.generate(new String[]{pole});
+                }
             }
 
             //ccnb
             pole = map.get("ccnb");
             //logger.log(Level.INFO, "ccnb: {0}", pole);
-            if (!"".equals(pole)) {
+            if (pole != null && !"".equals(pole)) {
                 return MD5.generate(new String[]{pole});
             }
 
@@ -285,7 +301,7 @@ public class Slouceni {
         return null;
     }
 
-    public static String generateMD5(String xml) {
+    public static String generateMD5Old(String xml) {
         try {
             XMLReader xmlReader = new XMLReader();
             xmlReader.loadXml(xml);
@@ -364,6 +380,72 @@ public class Slouceni {
         }
         return null;
     }
+    public static String generateMD5FromXml(String xml) {
+        try {
+            XMLReader xmlReader = new XMLReader();
+            xmlReader.loadXml(xml);
+            Map<String, String> map = new HashMap<String, String>();
+
+            //ISBN
+            String pole = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='020']/marc:subfield[@code='a']/text()");
+            map.put("isbn", pole);
+
+            //ISSN
+            pole = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='022']/marc:subfield[@code='a']/text()");
+            map.put("issn", pole);
+            //ccnb
+            pole = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='015']/marc:subfield[@code='a']/text()");
+            map.put("ccnb", pole);
+            
+            //Check 245n číslo části 
+            String f245nraw = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='n']/text()");
+            //logger.log(Level.INFO, "245n číslo části: {0}", f245nraw);
+            String f245n = "";
+            RomanNumber rn = new RomanNumber(f245nraw);
+            if (rn.isValid()) {
+                f245n = Integer.toString(rn.toInt());
+            }
+            map.put("245n", f245n);
+
+            //Pole 250 údaj o vydání (nechat pouze numerické znaky) (jen prvni cislice)
+            String f250a = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='250']/marc:subfield[@code='a']/text()");
+            //logger.log(Level.INFO, "f250a: {0}", f250a);
+            f250a = onlyLeadNumbers(f250a);
+            map.put("250a", f250a);
+
+            //Pole 100 autor – osobní jméno (ind1=1 →  prijmeni, jmeno; ind1=0 → jmeno, prijmeni.  
+            //Obratit v pripade ind1=1, jinak nechat)
+            String f100a = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='100']/marc:subfield[@code='a']/text()");
+            String ind1 = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='100']/@ind1");
+            if ("1".equals(ind1) && !"".equals(f100a)) {
+                String[] split = f100a.split(",", 2);
+                if (split.length == 2) {
+                    f100a = split[1] + split[0];
+                }
+            }
+            if ("".equals(f100a)) {
+                f100a = xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='c']/text()");
+            }
+            
+            
+            map.put("245a", 
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='a']/text()") +
+                    xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='b']/text()")         );
+            map.put("245p", xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='p']/text()"));
+            map.put("100a", f100a);
+            map.put("110a", xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='110']/marc:subfield[@code='a']/text()"));
+            map.put("111a", xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='111']/marc:subfield[@code='a']/text()"));
+            map.put("260a", xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='260']/marc:subfield[@code='a']/text()") +
+                " " + xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='260']/marc:subfield[@code='b']/text()") +
+                " " + onlyLeadNumbers(xmlReader.getNodeValue("/oai:record/oai:metadata/marc:record/marc:datafield[@tag='260']/marc:subfield[@code='c']/text()"))
+                    );
+            
+            return generateMD5(map);
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+        return null;
+    }
 
     private static String onlyLeadNumbers(String s) {
         if (s == null || "".equals(s)) {
@@ -376,6 +458,15 @@ public class Slouceni {
             n++;
         }
         return retVal;
+    }
+
+    public static void main(String[] args) throws IOException {
+        String s = "\"\"	\"\"	\"cnb000245226\"	\"Hlubinami pravěku /\"	\"\"	\"\"	\"1. vyd.\"	\"Josef,, Augusta\"	\"\"	\"\"	\"Praha :Mladá fronta,1956\"";
+        JSONObject json = new JSONObject(Slouceni.csvToJSONString(s));
+        System.out.println(json);
+        Map map = Slouceni.csvToMap(s);
+        System.out.println(map);
+        System.out.println(Slouceni.generateMD5(map));
     }
 
 }

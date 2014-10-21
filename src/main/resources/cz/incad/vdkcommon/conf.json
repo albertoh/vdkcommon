@@ -13,5 +13,6 @@
     "otherParams":{
         "f.rokvydani.facet.limit": -1,
         "f.rokvydani.facet.sort": false
-    }
+    },
+    "expirationDays": 35
 }

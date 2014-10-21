@@ -54,6 +54,10 @@ public class Options {
         return conf.optString(key, defVal);
     }
 
+    public String getString(String key) {
+        return conf.optString(key);
+    }
+
     public int getInt(String key, int defVal) {
         return conf.optInt(key, defVal);
     }

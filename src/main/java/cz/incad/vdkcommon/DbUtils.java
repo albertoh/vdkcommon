@@ -3,6 +3,7 @@
 package cz.incad.vdkcommon;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -33,6 +34,11 @@ public class DbUtils {
             return this.value;
         }
     };
+    
+    public static boolean isOracle(Connection conn) throws SQLException {
+        DatabaseMetaData p = conn.getMetaData();
+        return p.getDatabaseProductName().toLowerCase().contains("oracle");
+    }
     
     public static Connection getConnection() throws NamingException, SQLException {
         Context initContext = new InitialContext();

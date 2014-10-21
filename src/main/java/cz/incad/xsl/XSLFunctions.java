@@ -5,6 +5,7 @@
 package cz.incad.xsl;
 
 import cz.incad.vdkcommon.MD5;
+import cz.incad.vdkcommon.UTFSort;
 import java.io.IOException;
 import org.apache.commons.httpclient.URIException;
 import org.apache.commons.httpclient.util.URIUtil;
@@ -20,8 +21,7 @@ public class XSLFunctions {
     
     public XSLFunctions() throws IOException{
         
-        utf_sort = new UTFSort();
-        utf_sort.init();
+        utf_sort = UTFSort.getInstance();
     }
     
     public int validYear(String year){

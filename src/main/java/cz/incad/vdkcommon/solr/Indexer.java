@@ -34,7 +34,7 @@ public class Indexer {
 
     int total = 0;
 
-    String sqlZaznamy = "select zaznam_id, identifikator, uniqueCode, codeType, sourceXML, bohemika from zaznam";
+    String sqlZaznamy = "select zaznam_id, identifikator, uniqueCode, sourceXML, bohemika from zaznam";
     PreparedStatement psZaznamy;
 
     private final Options opts;
@@ -74,7 +74,7 @@ public class Indexer {
 
         try {
             logger.log(Level.INFO, "Indexace doc {0}...", uniqueCode);
-            String sql = "select zaznam_id, identifikator, codeType, sourceXML, bohemika from zaznam where uniqueCode=?";
+            String sql = "select zaznam_id, identifikator, sourceXML, bohemika from zaznam where uniqueCode=?";
             PreparedStatement ps = conn.prepareStatement(sql);
             ps.setString(1, uniqueCode);
             ResultSet rs = ps.executeQuery();
@@ -84,7 +84,6 @@ public class Indexer {
 
                 sb.append(transformXML(rs.getString("sourceXML"),
                         uniqueCode,
-                        rs.getString("codeType"),
                         rs.getString("identifikator"),
                         rs.getBoolean("bohemika")));
                 if (total % 1000 == 0) {
@@ -123,7 +122,6 @@ public class Indexer {
 
                 sb.append(transformXML(rs.getString("sourceXML"),
                         rs.getString("uniqueCode"),
-                        rs.getString("codeType"),
                         rs.getString("identifikator"),
                         rs.getBoolean("bohemika")));
                 if (total % 1000 == 0) {
@@ -161,11 +159,10 @@ public class Indexer {
         SolrIndexerCommiter.postData(sw.toString());
     }
     
-    private String transformXML(String xml, String uniqueCode, String codeType, String identifier, boolean bohemika) throws Exception {
+    private String transformXML(String xml, String uniqueCode, String identifier, boolean bohemika) throws Exception {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
         transformer.setParameter("uniqueCode", uniqueCode);
-        transformer.setParameter("codeType", codeType);
         transformer.setParameter("bohemika", Boolean.toString(bohemika));
         transformer.transform(new StreamSource(new StringReader(xml)), destStream);
         logger.log(Level.FINE, "Sending to index ...");
@@ -177,7 +174,6 @@ public class Indexer {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
         transformer.setParameter("uniqueCode", uniqueCode);
-        transformer.setParameter("codeType", codeType);
         transformer.setParameter("bohemika", Boolean.toString(bohemika));
         transformer.transform(new StreamSource(new StringReader(xml)), destStream);
         logger.log(Level.FINE, "Sending to index ...");

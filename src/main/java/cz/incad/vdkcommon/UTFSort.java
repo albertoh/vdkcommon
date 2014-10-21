@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import org.json.JSONException;
 
 /**
  *
@@ -16,13 +17,19 @@ public class UTFSort {
 
     Map<String, String> maps = new HashMap<String, String>();
     
-    public UTFSort() {
-        
+    private static UTFSort _sharedInstance = null;
+    
+    public synchronized static UTFSort getInstance() throws IOException {
+        if (_sharedInstance == null) {
+            _sharedInstance = new UTFSort();
+        }
+        return _sharedInstance;
     }
     
-    public void init() throws IOException{
+    public UTFSort() throws IOException {
         loadMapFile();
     }
+    
 
     private void loadMapFile() throws IOException {
         
@@ -75,8 +82,7 @@ public class UTFSort {
     
     public static void main(String[] args) throws IOException{
             UTFSort u = new UTFSort();
-            u.init();
-            //u.printMap();
+            
             
             String s = "která mají řadicí platnost (tj. č,ř,š,ž) 1490";
             s = u.translate(s).toLowerCase().replaceAll("[| ]", "");
