@@ -614,19 +614,19 @@ public class OAIHarvester {
 
                     String hlavninazev = xmlReader.getNodeValue(node, "./oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='a']/text()");
 
-                    int zaznamId = getZaznamId(identifier);
-//                    if (fr == null) {
-////                        fr = newRecord(Structure.zaznam);
-//                        zaznamExists = false;
-//                    }
+                    int zaznamId = -1;
+                    if(!this.fullIndex){
+                        zaznamId = getZaznamId(identifier);
+                    }
                     String cnbStr = xmlReader.getNodeValue(node, "./oai:metadata/marc:record/marc:datafield[@tag='015']/marc:subfield[@code='a']/text()");
 
-                    String uniqueCode = Slouceni.generateMD5FromXml(xmlStr);
+                    JSONObject slouceni = Slouceni.fromXml(xmlStr);
 
                     zaznam.sklizen = this.sklizen;
                     zaznam.knihovna = opts.getString("knihovna");
                     zaznam.identifikator = identifier;
-                    zaznam.uniqueCode = uniqueCode;
+                    zaznam.uniqueCode = slouceni.getString("docCode");
+                    zaznam.codeType = slouceni.getString("codeType");
                     zaznam.urlZdroje = urlZdroje;
                     zaznam.hlavniNazev = hlavninazev;
                     zaznam.bohemika = Bohemika.isBohemika(xmlStr);
@@ -641,11 +641,12 @@ public class OAIHarvester {
 
                     try {
                         zaznam.execute(zaznamId);
+                        currentDocsSent++;
                     } catch (Exception ex) {
                         if (this.continueOnDocError) {
-                            logFile.newLine();
-                            logFile.write("Error writing docs to db. Id: " + identifier);
-                            logFile.flush();
+                            errorLogFile.newLine();
+                            errorLogFile.write("Error writing docs to db. Id: " + identifier);
+                            errorLogFile.flush();
                             logger.log(Level.WARNING, "Error writing doc to db. Id: {0}", identifier);
                         } else {
                             throw new Exception(ex);

@@ -35,12 +35,12 @@ public class Zaznam {
         StringBuilder sql = new StringBuilder("insert into ZAZNAM ");
         boolean isOracle = DbUtils.isOracle(conn);
         
-        sql.append(" (sklizen, knihovna, identifikator, uniqueCode, url, hlavniNazev, typDokumentu, bohemika, sourceXML, update_timestamp");
+        sql.append(" (sklizen, knihovna, identifikator, uniqueCode, codeType, url, hlavniNazev, typDokumentu, bohemika, sourceXML, update_timestamp");
         if(isOracle){
             sql.append(",zaznam_id");
         }
         sql.append(")");
-        sql.append(" values (?,?,?,?,?,?,?,?,?");
+        sql.append(" values (?,?,?,?,?,?,?,?,?,?");
         if(isOracle){
             sql.append(", sysdate, Zaznam_ID_SQ.nextval");
         }else{
@@ -52,7 +52,7 @@ public class Zaznam {
         
         StringBuilder sqlUpdate = new StringBuilder("update ZAZNAM ");
         sqlUpdate.append("set sklizen=?, knihovna=?, identifikator=?, ")
-                .append("uniqueCode=?, url=?, hlavniNazev=?, typDokumentu=?, bohemika=?, ")
+                .append("uniqueCode=?, codeType=?, url=?, hlavniNazev=?, typDokumentu=?, bohemika=?, ")
                 .append("sourceXML=?, update_timestamp=");
         
         if(isOracle){
@@ -84,6 +84,7 @@ public class Zaznam {
         ps.setString(i++, knihovna);
         ps.setString(i++, identifikator);
         ps.setString(i++, uniqueCode);
+        ps.setString(i++, codeType);
         ps.setString(i++, urlZdroje);
         ps.setString(i++, hlavniNazev);
         ps.setString(i++, typDokumentu);

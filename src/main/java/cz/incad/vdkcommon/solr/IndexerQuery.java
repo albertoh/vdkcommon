@@ -46,6 +46,29 @@ public class IndexerQuery {
     public static String xml(SolrQuery query) throws MalformedURLException, IOException {
         
         query.set("indent", true);
+        query.set("wt", "xml");
+
+    // use org.apache.solr.client.solrj.util.ClientUtils 
+        // to make a URL compatible query string of your SolrQuery
+        String urlQueryString = ClientUtils.toQueryString(query, false);
+        Options opts = Options.getInstance();
+        String solrURL = String.format("%s/%s/select",
+                opts.getString("solrHost", "http://localhost:8080/solr"),
+                opts.getString("solrCore", "vdk_md5"));
+        URL url = new URL(solrURL + urlQueryString);
+
+        // use org.apache.commons.io.IOUtils to do the http handling for you
+        String xmlResponse = IOUtils.toString(url, "UTF-8");
+
+        return xmlResponse;
+    }
+    
+    
+    
+    public static String json(SolrQuery query) throws MalformedURLException, IOException {
+        
+        query.set("indent", true);
+        query.set("wt", "json");
 
     // use org.apache.solr.client.solrj.util.ClientUtils 
         // to make a URL compatible query string of your SolrQuery

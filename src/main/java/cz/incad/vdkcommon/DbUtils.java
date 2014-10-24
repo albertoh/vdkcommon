@@ -1,5 +1,3 @@
-
-
 package cz.incad.vdkcommon;
 
 import java.sql.Connection;
@@ -8,53 +6,63 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
 import javax.sql.DataSource;
+import org.json.JSONObject;
 
 /**
  *
  * @author alberto
  */
 public class DbUtils {
-    public enum Roles{
-        ADMIN ("admin"),
-        SOURCELIB ("sourcelib"),
-        USER ("user"),
-        LIB ("lib");
-        
+
+    static final Logger logger = Logger.getLogger(DbUtils.class.getName());
+
+    public enum Roles {
+
+        ADMIN("admin"),
+        SOURCELIB("sourcelib"),
+        USER("user"),
+        LIB("lib");
+
         String value;
-        Roles(String value){
+
+        Roles(String value) {
             this.value = value;
         }
-        
+
         @Override
-        public String toString(){
+        public String toString() {
             return this.value;
         }
     };
-    
+
     public static boolean isOracle(Connection conn) throws SQLException {
         DatabaseMetaData p = conn.getMetaData();
         return p.getDatabaseProductName().toLowerCase().contains("oracle");
     }
-    
+
     public static Connection getConnection() throws NamingException, SQLException {
         Context initContext = new InitialContext();
         Context envContext = (Context) initContext.lookup("java:/comp/env");
         DataSource ds = (DataSource) envContext.lookup("jdbc/vdk");
         return ds.getConnection();
     }
+
     public static Connection getConnection(String className,
-        String url, String username, String password) throws NamingException, SQLException, ClassNotFoundException {
+            String url, String username, String password) throws NamingException, SQLException, ClassNotFoundException {
         Class.forName(className);
         return DriverManager.getConnection(url, username, password);
     }
-    public static String getXml(String id) throws SQLException{
+
+    public static String getXml(String id) throws SQLException {
         Connection conn = null;
         try {
-            
+
             conn = DbUtils.getConnection();
 
             String sql = "select sourceXML from ZAZNAM where identifikator=?";
@@ -63,7 +71,7 @@ public class DbUtils {
             ResultSet rs = ps.executeQuery();
             if (rs.next()) {
                 return rs.getString(1);
-            }else{
+            } else {
                 return "<xml/>";
             }
 
@@ -74,5 +82,56 @@ public class DbUtils {
                 conn.close();
             }
         }
+    }
+
+    public static String regenerateCodes() throws SQLException {
+        String ret = "";
+        Connection conn = null;
+        int total = 0;
+        String usql = "update zaznam set uniqueCode=?, codeType=? where zaznam_id=?";
+        String sql = "select zaznam_id, sourceXML from zaznam";
+        try {
+
+            conn = DbUtils.getConnection();
+
+            PreparedStatement ps = conn.prepareStatement(sql);
+            PreparedStatement ups = conn.prepareStatement(usql);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+            //logger.log(Level.INFO, rs.getString("sourceXML"));
+                // check interrupted thread
+                if (Thread.currentThread().isInterrupted()) {
+                    logger.log(Level.INFO, "REGENERATE MD5 CODE INTERRUPTED. Total records: {0}", total);
+                    throw new InterruptedException();
+                }
+                int id = 0;
+                try {
+                    id = rs.getInt("zaznam_id");
+                    logger.log(Level.INFO, "processing record " + id);
+                    JSONObject slouceni = Slouceni.fromXml(rs.getString("sourceXML"));
+                    logger.log(Level.INFO, "uniqueCode: {0}", slouceni.getString("docCode"));
+
+                    ups.setString(1, slouceni.getString("docCode"));
+                    ups.setString(2, slouceni.getString("codeType"));
+                    ups.setInt(3, id);
+                    ups.executeUpdate();
+                    logger.log(Level.INFO, "Record id {0} updated. Total: {1}", new Object[]{id, total});
+
+                } catch (SQLException ex) {
+                    logger.log(Level.WARNING, "Error in record " + id, ex);
+                }
+                total++;
+            }
+            //conn.commit();
+            rs.close();
+
+        } catch (Exception ex) {
+            return ex.toString();
+        } finally {
+            if (conn != null && !conn.isClosed()) {
+                conn.close();
+            }
+        }
+        return ret;
     }
 }
