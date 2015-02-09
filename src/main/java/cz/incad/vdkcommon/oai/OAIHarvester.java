@@ -7,6 +7,7 @@ import cz.incad.vdkcommon.Options;
 import cz.incad.vdkcommon.Interval;
 import cz.incad.vdkcommon.Slouceni;
 import cz.incad.vdkcommon.db.Zaznam;
+import cz.incad.vdkcommon.solr.Indexer;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
@@ -72,12 +73,15 @@ public class OAIHarvester {
 
     String sqlReindex = "select sourceXML, bohemika from zaznam where uniqueCode=?";
     PreparedStatement psReindex;
-    String sqlZaznam = "select zaznam_id from zaznam where identifikator=?";
+    String sqlZaznam = "select zaznam_id, uniquecode from zaznam where identifikator=?";
     PreparedStatement psZaznam;
     private boolean dontIndex;
+    String sqlRemoveZaznam = "delete from zaznam where identifikator=?";
+    PreparedStatement psRemoveZaznam;
+    
+    Indexer indexer = new Indexer();
 
     Zaznam zaznam;
-    private int sklizen;
 
     public OAIHarvester(String configFile) throws Exception {
         this.configFile = configFile;
@@ -111,6 +115,13 @@ public class OAIHarvester {
 
         this.homeDir = opts.optString("homeDir", ".vdkcr")
                 + File.separator;
+        this.saveToDisk = opts.optBoolean("saveToDisk", true);
+        this.fullIndex = opts.optBoolean("fullIndex", false);
+        this.onlyHarvest = opts.optBoolean("onlyHarvest", false);
+        this.startIndex = opts.optInt("startIndex", -1);
+        
+        this.pathToData =opts.getString("indexDirectory");
+        
         try {
             File dir = new File(this.homeDir + "logs");
             if (!dir.exists()) {
@@ -145,11 +156,8 @@ public class OAIHarvester {
 
     private void getRecordsFromDisk() throws Exception {
         logger.info("Processing dowloaded files");
-        if (this.pathToData == null) {
-            getRecordsFromDir(new File(opts.getString("indexDirectory")));
-        } else {
-            getRecordsFromDir(new File(this.pathToData));
-        }
+        getRecordsFromDir(new File(this.pathToData));
+        
     }
 
     private void getRecordsFromDir(File dir) throws Exception {
@@ -173,8 +181,8 @@ public class OAIHarvester {
                         processRecord(nodes.item(j), identifier, j + 1);
                     }
                     currentIndex++;
-                    logger.log(Level.FINE, "number: {0}", currentDocsSent);
                 }
+                logger.log(Level.INFO, "number: {0}", currentDocsSent);
 
 //                if (!arguments.dontIndex) {
 //                    indexer.processXML(children[i]);
@@ -363,7 +371,7 @@ public class OAIHarvester {
                     for (int i = 0; i < nodes.getLength(); i++) {
                         identifier = xmlReader.getNodeValue("//oai:record[position()=" + (i + 1) + "]/oai:header/oai:identifier/text()");
 
-                        //processRecord(nodes.item(i), identifier, i + 1);
+                        processRecord(nodes.item(i), identifier, i + 1);
                         currentIndex++;
                         logger.log(Level.FINE, "number: {0} of {1}", new Object[]{(currentDocsSent), completeListSize});
                     }
@@ -447,7 +455,7 @@ public class OAIHarvester {
             //oh.setSaveToDisk(true);
             oh.setFromDisk(true);
             oh.setPathToData("/home/alberto/.vdkcr/OAI/harvest/NKC/2014/08/28/09/20/45");
-            oh.setSklizen(156);
+            
             oh.harvest();
 
             //oh.harvest("-cfgFile nkp_vdk -dontIndex -fromDisk ", null, null);
@@ -559,13 +567,6 @@ public class OAIHarvester {
     }
 
     /**
-     * @param sklizen the startIndex to set
-     */
-    public void setSklizen(int sklizen) {
-        this.sklizen = sklizen;
-    }
-
-    /**
      * @param startIndex the startIndex to set
      */
     public void setStartIndex(int startIndex) {
@@ -592,6 +593,9 @@ public class OAIHarvester {
 //            logger.log(Level.INFO, "JSON for identifier {0} is: ", json);
             String error = xmlReader.getNodeValue(node, "/oai:error/@code");
             if (error == null || error.equals("")) {
+                ZaznamData oldZaznam = getZaznam(identifier);
+                
+                
 
                 String urlZdroje = opts.getString("baseUrl")
                         + "?verb=GetRecord&identifier=" + identifier
@@ -604,8 +608,12 @@ public class OAIHarvester {
                         return;
                     }
                     //zpracovat deletes
-                    if (!this.dontIndex) {
-                        //indexer.removeDoc(urlZdroje);
+                    if (!this.isDontIndex()) {
+                        removeZaznam(identifier);
+                        if(oldZaznam != null){
+                            indexer.reindexDoc(conn, oldZaznam.getUniqueCode());
+                           
+                        }
                     }
                 } else {
 //                    String xmlStr = nodeToString(xmlReader.getNodeElement(), index);
@@ -614,15 +622,10 @@ public class OAIHarvester {
 
                     String hlavninazev = xmlReader.getNodeValue(node, "./oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='a']/text()");
 
-                    int zaznamId = -1;
-                    if(!this.fullIndex){
-                        zaznamId = getZaznamId(identifier);
-                    }
                     String cnbStr = xmlReader.getNodeValue(node, "./oai:metadata/marc:record/marc:datafield[@tag='015']/marc:subfield[@code='a']/text()");
 
                     JSONObject slouceni = Slouceni.fromXml(xmlStr);
 
-                    zaznam.sklizen = this.sklizen;
                     zaznam.knihovna = opts.getString("knihovna");
                     zaznam.identifikator = identifier;
                     zaznam.uniqueCode = slouceni.getString("docCode");
@@ -640,7 +643,11 @@ public class OAIHarvester {
                     zaznam.sourceXML = xmlStr;
 
                     try {
-                        zaznam.execute(zaznamId);
+                        if(oldZaznam == null){
+                            zaznam.insert();
+                        }else{
+                            zaznam.update(oldZaznam.getId());
+                        }
                         currentDocsSent++;
                     } catch (Exception ex) {
                         if (this.continueOnDocError) {
@@ -654,9 +661,12 @@ public class OAIHarvester {
                     }
 
                     //try {
-                    if (!this.dontIndex) {
-                        if (zaznamId > 1) {
-                            //reindexRecords(uniqueCode, codeType, identifier);
+                    if (!this.isDontIndex()) {
+                        if(oldZaznam != null && oldZaznam.getUniqueCode().equals(zaznam.uniqueCode)){
+                            indexer.reindexDoc(conn, oldZaznam.getUniqueCode());
+                        }
+                        if (oldZaznam != null) {
+                            indexer.reindexDoc(conn, zaznam.uniqueCode);
                         } else {
                             //indexer.processXML(xmlStr, uniqueCode, codeType, identifier, Bohemika.isBohemika(xmlStr));
                         }
@@ -670,15 +680,24 @@ public class OAIHarvester {
         }
     }
     
-    private int getZaznamId(String identifier) throws SQLException{
-        int ret = -1;
+    private ZaznamData getZaznam(String identifier) throws SQLException{
+        ZaznamData ret = null;
         psZaznam.setString(1, identifier);
         ResultSet rs = psZaznam.executeQuery();
         if(rs.next()){
-            ret = rs.getInt(1);
+            ret = new ZaznamData();
+            ret.setId(rs.getInt(1));
+            ret.setUniqueCode(rs.getString(2));
         }
         rs.close();
         return ret;
+    }
+
+    
+    private void removeZaznam(String identifier) throws SQLException{
+        psRemoveZaznam.setString(1, identifier);
+        psRemoveZaznam.executeUpdate();
+        
     }
 
     private String typDokumentu(String leader) {
@@ -718,6 +737,55 @@ public class OAIHarvester {
             }
         } else {
             return "none";
+        }
+    }
+
+    /**
+     * @return the dontIndex
+     */
+    public boolean isDontIndex() {
+        return dontIndex;
+    }
+
+    /**
+     * @param dontIndex the dontIndex to set
+     */
+    public void setDontIndex(boolean dontIndex) {
+        this.dontIndex = dontIndex;
+    }
+
+    private static class ZaznamData {
+        private String uniqueCode;
+        private int id;
+        public ZaznamData() {
+        }
+
+        /**
+         * @return the uniqueCode
+         */
+        public String getUniqueCode() {
+            return uniqueCode;
+        }
+
+        /**
+         * @param uniqueCode the uniqueCode to set
+         */
+        public void setUniqueCode(String uniqueCode) {
+            this.uniqueCode = uniqueCode;
+        }
+
+        /**
+         * @return the id
+         */
+        public int getId() {
+            return id;
+        }
+
+        /**
+         * @param id the id to set
+         */
+        public void setId(int id) {
+            this.id = id;
         }
     }
 }

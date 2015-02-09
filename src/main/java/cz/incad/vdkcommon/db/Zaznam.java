@@ -21,7 +21,6 @@ public class Zaznam {
     public String identifikator;
     public String urlZdroje;
     public String sourceXML;
-    public int sklizen;
     public String uzivatel;
     public String knihovna;
     public String uniqueCode;
@@ -35,12 +34,12 @@ public class Zaznam {
         StringBuilder sql = new StringBuilder("insert into ZAZNAM ");
         boolean isOracle = DbUtils.isOracle(conn);
         
-        sql.append(" (sklizen, knihovna, identifikator, uniqueCode, codeType, url, hlavniNazev, typDokumentu, bohemika, sourceXML, update_timestamp");
+        sql.append(" (knihovna, identifikator, uniqueCode, codeType, url, hlavniNazev, typDokumentu, bohemika, sourceXML, update_timestamp");
         if(isOracle){
             sql.append(",zaznam_id");
         }
         sql.append(")");
-        sql.append(" values (?,?,?,?,?,?,?,?,?,?");
+        sql.append(" values (?,?,?,?,?,?,?,?,?");
         if(isOracle){
             sql.append(", sysdate, Zaznam_ID_SQ.nextval");
         }else{
@@ -51,7 +50,7 @@ public class Zaznam {
         psInsert = conn.prepareStatement(sql.toString());
         
         StringBuilder sqlUpdate = new StringBuilder("update ZAZNAM ");
-        sqlUpdate.append("set sklizen=?, knihovna=?, identifikator=?, ")
+        sqlUpdate.append("set knihovna=?, identifikator=?, ")
                 .append("uniqueCode=?, codeType=?, url=?, hlavniNazev=?, typDokumentu=?, bohemika=?, ")
                 .append("sourceXML=?, update_timestamp=");
         
@@ -68,19 +67,18 @@ public class Zaznam {
         psUpdate.clearParameters();
         psInsert.clearParameters();
     }
+    
+    public void update(int zaznamId) throws SQLException {
+        psUpdate.setInt(psUpdate.getParameterMetaData().getParameterCount(), zaznamId);
+        process(psUpdate);
+    }
 
-    public void execute(int zaznamId) throws SQLException {
-        if(zaznamId > -1){
-            psUpdate.setInt(psUpdate.getParameterMetaData().getParameterCount(), zaznamId);
-            process(psUpdate);
-        }else{
+    public void insert() throws SQLException {
             process(psInsert);
-        }
     }
 
     public void process(PreparedStatement ps) throws SQLException {
         int i = 1;
-        ps.setInt(i++, this.sklizen);
         ps.setString(i++, knihovna);
         ps.setString(i++, identifikator);
         ps.setString(i++, uniqueCode);

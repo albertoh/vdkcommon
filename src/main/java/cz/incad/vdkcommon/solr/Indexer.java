@@ -63,7 +63,7 @@ public class Indexer {
 
     public void reindexDoc(Connection conn, String uniqueCode) throws Exception {
         
-        logger.log(Level.INFO, "Cleaning doc from index...");
+        logger.log(Level.INFO, "Cleaning doc {0} from index...", uniqueCode);
         String s = "<delete><query>code:"+uniqueCode+"</query></delete>";
         SolrIndexerCommiter.postData(s);
         SolrIndexerCommiter.postData("<commit/>");
