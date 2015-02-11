@@ -85,7 +85,6 @@ public class OAIHarvester {
 
     public OAIHarvester(String configFile) throws Exception {
         this.configFile = configFile;
-        conn = DbUtils.getConnection();
         init();
     }
 
@@ -137,10 +136,7 @@ public class OAIHarvester {
         }
         xmlReader = new XMLReader();
 
-        psReindex = conn.prepareStatement(sqlReindex);
-        psZaznam = conn.prepareStatement(sqlZaznam);
-
-        zaznam = new Zaznam(conn);
+        
 
         sdfoai = new SimpleDateFormat(opts.getString("oaiDateFormat"));
         sdf = new SimpleDateFormat(opts.getString("filePathFormat"));
@@ -195,6 +191,11 @@ public class OAIHarvester {
     public int harvest() throws Exception {
 
         try {
+            conn = DbUtils.getConnection();
+            psReindex = conn.prepareStatement(sqlReindex);
+            psZaznam = conn.prepareStatement(sqlZaznam);
+
+            zaznam = new Zaznam(conn);
             logFile = new BufferedWriter(new FileWriter(this.homeDir + "logs" + File.separator + configFile + ".log"));
             errorLogFile = new BufferedWriter(new FileWriter(this.homeDir + "logs" + File.separator + configFile + ".error.log"));
 

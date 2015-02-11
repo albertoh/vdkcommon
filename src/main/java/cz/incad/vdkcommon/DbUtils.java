@@ -21,6 +21,8 @@ import org.json.JSONObject;
 public class DbUtils {
 
     static final Logger logger = Logger.getLogger(DbUtils.class.getName());
+    private static Connection conn;
+
 
     public enum Roles {
 
@@ -47,10 +49,14 @@ public class DbUtils {
     }
 
     public static Connection getConnection() throws NamingException, SQLException {
-        Context initContext = new InitialContext();
-        Context envContext = (Context) initContext.lookup("java:/comp/env");
-        DataSource ds = (DataSource) envContext.lookup("jdbc/vdk");
-        return ds.getConnection();
+        if (conn == null || conn.isClosed()) {
+            
+            Context initContext = new InitialContext();
+            Context envContext = (Context) initContext.lookup("java:/comp/env");
+            DataSource ds = (DataSource) envContext.lookup("jdbc/vdk");
+            conn = ds.getConnection();
+        }
+        return conn;
     }
 
     public static Connection getConnection(String className,
@@ -60,11 +66,11 @@ public class DbUtils {
     }
 
     public static String getXml(String id) throws SQLException {
-        Connection conn = null;
+        
         try {
 
-            conn = DbUtils.getConnection();
-
+            
+            getConnection();
             String sql = "select sourceXML from ZAZNAM where identifikator=?";
             PreparedStatement ps = conn.prepareStatement(sql);
             ps.setString(1, id);
@@ -86,13 +92,12 @@ public class DbUtils {
 
     public static String regenerateCodes() throws SQLException {
         String ret = "";
-        Connection conn = null;
         int total = 0;
         String usql = "update zaznam set uniqueCode=?, codeType=? where zaznam_id=?";
         String sql = "select zaznam_id, sourceXML from zaznam";
         try {
 
-            conn = DbUtils.getConnection();
+            getConnection();
 
             PreparedStatement ps = conn.prepareStatement(sql);
             PreparedStatement ups = conn.prepareStatement(usql);
