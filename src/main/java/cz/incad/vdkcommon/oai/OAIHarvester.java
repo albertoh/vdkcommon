@@ -28,11 +28,27 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONObject;
+import org.quartz.CronScheduleBuilder;
+import org.quartz.CronTrigger;
+import static org.quartz.DateBuilder.evenMinuteDate;
+import org.quartz.JobBuilder;
+import org.quartz.JobDataMap;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.SchedulerFactory;
+import org.quartz.Trigger;
+import org.quartz.TriggerBuilder;
+import static org.quartz.TriggerBuilder.newTrigger;
+import org.quartz.core.jmx.JobDataMapSupport;
+import org.quartz.impl.StdSchedulerFactory;
 
 /**
  *
@@ -44,31 +60,22 @@ public class OAIHarvester {
     private JSONObject opts;
     XMLReader xmlReader;
     Connection conn;
-    private String metadataPrefix;
-    private int interval;
+    
     String completeListSize;
     int currentDocsSent = 0;
     int currentIndex = 0;
-    SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd/HH");
-    SimpleDateFormat sdfoai;
+    
     Transformer xformer;
 
-    String homeDir;
+    
     BufferedWriter logFile;
     BufferedWriter errorLogFile;
 
-    private boolean saveToDisk = false;
-    private boolean fromDisk = false;
-    private boolean fullIndex = false;
-    private boolean onlyIdentifiers = false;
-    private boolean onlyHarvest = false;
-    private boolean continueOnDocError = false;
+    
     private String from;
     private String to;
     private String resumptionToken = null;
-    private int startIndex;
-    private int maxDocuments = -1;
-    private String pathToData;
+    
     String configFile;
 
     String sqlReindex = "select sourceXML, bohemika from zaznam where uniqueCode=?";
@@ -78,24 +85,34 @@ public class OAIHarvester {
     private boolean dontIndex;
     String sqlRemoveZaznam = "delete from zaznam where identifikator=?";
     PreparedStatement psRemoveZaznam;
-    
+
     Indexer indexer = new Indexer();
 
     Zaznam zaznam;
 
     public OAIHarvester(String configFile) throws Exception {
         this.configFile = configFile;
+        this.jobData = new HarvesterJobData(configFile);
+        init();
+    }
+
+    public OAIHarvester(HarvesterJobData jobData) throws Exception {
+        this.jobData = jobData;
+        this.configFile = jobData.getConfigFile();
         init();
     }
 
     public OAIHarvester(Connection conn, String configFile) throws Exception {
         this.configFile = configFile;
         this.conn = conn;
+        this.jobData = new HarvesterJobData(configFile);
         init();
     }
 
+    HarvesterJobData jobData;
     private void init() throws Exception {
-        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + configFile + ".json";
+        
+        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + jobData.getConfigFile() + ".json";
         File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/oai.json"));
 
         String json = FileUtils.readFileToString(fdef, "UTF-8");
@@ -110,19 +127,14 @@ public class OAIHarvester {
                 logger.log(Level.INFO, "key {0} will be overrided", key);
                 opts.put(key, confCustom.get(key));
             }
+        }else{
+            logger.log(Level.INFO, "File {0} is not present, using default configuration", path);
         }
 
-        this.homeDir = opts.optString("homeDir", ".vdkcr")
-                + File.separator;
-        this.saveToDisk = opts.optBoolean("saveToDisk", true);
-        this.fullIndex = opts.optBoolean("fullIndex", false);
-        this.onlyHarvest = opts.optBoolean("onlyHarvest", false);
-        this.startIndex = opts.optInt("startIndex", -1);
         
-        this.pathToData =opts.getString("indexDirectory");
-        
+
         try {
-            File dir = new File(this.homeDir + "logs");
+            File dir = new File(jobData.getHomeDir() + "logs");
             if (!dir.exists()) {
                 boolean success = dir.mkdirs();
                 if (!success) {
@@ -135,15 +147,8 @@ public class OAIHarvester {
             throw new Exception(ex);
         }
         xmlReader = new XMLReader();
-
         
 
-        sdfoai = new SimpleDateFormat(opts.getString("oaiDateFormat"));
-        sdf = new SimpleDateFormat(opts.getString("filePathFormat"));
-
-        this.setMetadataPrefix(opts.getString("metadataPrefix"));
-
-        interval = Interval.parseString(opts.getString("interval"));
         xformer = TransformerFactory.newInstance().newTransformer();
 
         logger.info("Harvester initialized");
@@ -152,15 +157,15 @@ public class OAIHarvester {
 
     private void getRecordsFromDisk() throws Exception {
         logger.info("Processing dowloaded files");
-        getRecordsFromDir(new File(this.pathToData));
-        
+        getRecordsFromDir(new File(jobData.getPathToData()));
+
     }
 
     private void getRecordsFromDir(File dir) throws Exception {
         File[] children = dir.listFiles();
         Arrays.sort(children);
         for (File child : children) {
-            if (currentDocsSent >= this.maxDocuments && this.maxDocuments > 0) {
+            if (currentDocsSent >= jobData.getMaxDocuments() && jobData.getMaxDocuments() > 0) {
                 break;
             }
             if (child.isDirectory()) {
@@ -171,7 +176,7 @@ public class OAIHarvester {
                 xmlReader.loadXmlFromFile(child);
                 NodeList nodes = xmlReader.getListOfNodes("//oai:record");
                 for (int j = 0; j < nodes.getLength(); j++) {
-                    if (currentIndex > this.startIndex) {
+                    if (currentIndex > jobData.getStartIndex()) {
                         identifier = xmlReader.getNodeValue("//oai:record[position()=" + (j + 1) + "]/oai:header/oai:identifier/text()");
 
                         processRecord(nodes.item(j), identifier, j + 1);
@@ -188,6 +193,8 @@ public class OAIHarvester {
         }
     }
 
+    
+
     public int harvest() throws Exception {
 
         try {
@@ -196,28 +203,28 @@ public class OAIHarvester {
             psZaznam = conn.prepareStatement(sqlZaznam);
 
             zaznam = new Zaznam(conn);
-            logFile = new BufferedWriter(new FileWriter(this.homeDir + "logs" + File.separator + configFile + ".log"));
-            errorLogFile = new BufferedWriter(new FileWriter(this.homeDir + "logs" + File.separator + configFile + ".error.log"));
+            logFile = new BufferedWriter(new FileWriter(jobData.getHomeDir() + "logs" + File.separator + configFile + ".log"));
+            errorLogFile = new BufferedWriter(new FileWriter(jobData.getHomeDir() + "logs" + File.separator + configFile + ".error.log"));
 
             long startTime = (new Date()).getTime();
             currentIndex = 0;
 
-            if (this.fromDisk) {
+            if (jobData.isFromDisk()) {
                 getRecordsFromDisk();
             } else {
-                File updateTimeFile = new File(this.homeDir + opts.getString("updateTimeFile"));
+                File updateTimeFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
                 if (resumptionToken != null) {
                     logger.log(Level.INFO, "updating with resumptionToken: {0}", resumptionToken);
                     getRecordWithResumptionToken(this.resumptionToken);
                 } else {
-                    if (this.fullIndex) {
-                        setFrom(getInitialDate());
+                    if (jobData.isFullIndex()) {
+                        jobData.setFrom(getInitialDate());
                     } else {
                         if (updateTimeFile.exists()) {
                             BufferedReader in = new BufferedReader(new FileReader(updateTimeFile));
-                            setFrom(in.readLine());
+                            jobData.setFrom(in.readLine());
                         } else {
-                            setFrom(getInitialDate());
+                            jobData.setFrom(getInitialDate());
                         }
                     }
                     logger.log(Level.INFO, "updating from: " + from);
@@ -253,7 +260,7 @@ public class OAIHarvester {
     }
 
     private void writeResponseDate(String from) throws FileNotFoundException, IOException {
-        File updateTimeFile = new File(this.homeDir + opts.getString("updateTimeFile"));
+        File updateTimeFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
         BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(updateTimeFile)));
         out.write(from);
         out.close();
@@ -261,31 +268,31 @@ public class OAIHarvester {
 
     private void update(String from) throws Exception {
         Calendar c_from = Calendar.getInstance();
-        c_from.setTime(sdfoai.parse(from));
+        c_from.setTime(jobData.getSdfoai().parse(from));
         Calendar c_to = Calendar.getInstance();
-        c_to.setTime(sdfoai.parse(from));
+        c_to.setTime(jobData.getSdfoai().parse(from));
 
-        c_to.add(interval, 1);
+        c_to.add(jobData.getInterval(), 1);
 
         String to;
         Date date = new Date();
-        //sdfoai.setTimeZone(TimeZone.getTimeZone("GMT"));
+        //jobData.getSdfoai().setTimeZone(TimeZone.getTimeZone("GMT"));
 
         if (this.to == null) {
-            to = sdfoai.format(date);
+            to = jobData.getSdfoai().format(date);
         } else {
             to = this.to;
         }
-        Date final_date = sdfoai.parse(to);
+        Date final_date = jobData.getSdfoai().parse(to);
         Date current = c_to.getTime();
 
         while (current.before(final_date)) {
-            update(sdfoai.format(c_from.getTime()), sdfoai.format(current));
-            c_to.add(interval, 1);
-            c_from.add(interval, 1);
+            update(jobData.getSdfoai().format(c_from.getTime()), jobData.getSdfoai().format(current));
+            c_to.add(jobData.getInterval(), 1);
+            c_from.add(jobData.getInterval(), 1);
             current = c_to.getTime();
         }
-        update(sdfoai.format(c_from.getTime()), sdfoai.format(final_date));
+        update(jobData.getSdfoai().format(c_from.getTime()), jobData.getSdfoai().format(final_date));
 
         writeResponseDate(to);
 
@@ -322,7 +329,7 @@ public class OAIHarvester {
                 opts.getString("verb"),
                 from,
                 until,
-                metadataPrefix,
+                jobData.getMetadataPrefix(),
                 opts.getString("set"));
         resumptionToken = getRecords(query);
         while (resumptionToken != null && !resumptionToken.equals("")) {
@@ -358,16 +365,16 @@ public class OAIHarvester {
             String identifier;
 
             String fileName = null;
-            if (this.isSaveToDisk()) {
+            if (jobData.isSaveToDisk()) {
                 fileName = writeNodeToFile(xmlReader.getNodeElement(),
                         xmlReader.getNodeValue("//oai:record[position()=1]/oai:header/oai:datestamp/text()"),
                         xmlReader.getNodeValue("//oai:record[position()=1]/oai:header/oai:identifier/text()"));
             }
             NodeList nodes = xmlReader.getListOfNodes("//oai:record");
-            if (this.onlyIdentifiers) {
+            if (jobData.isOnlyIdentifiers()) {
                 //TODO
             } else {
-                if (!this.onlyHarvest && currentIndex > this.startIndex) {
+                if (!jobData.isOnlyHarvest() && currentIndex > jobData.getStartIndex()) {
 
                     for (int i = 0; i < nodes.getLength(); i++) {
                         identifier = xmlReader.getNodeValue("//oai:record[position()=" + (i + 1) + "]/oai:header/oai:identifier/text()");
@@ -388,7 +395,7 @@ public class OAIHarvester {
     }
 
     private String writeNodeToFile(Node node, String date, String identifier) throws Exception {
-        String dirName = opts.getString("indexDirectory") + File.separatorChar + sdf.format(sdfoai.parse(date));
+        String dirName = opts.getString("indexDirectory") + File.separatorChar + jobData.getSdf().format(jobData.getSdfoai().parse(date));
 
         File dir = new File(dirName);
         if (!dir.exists()) {
@@ -454,9 +461,9 @@ public class OAIHarvester {
                     "vdk");
             OAIHarvester oh = new OAIHarvester(conn, "nkc_vdk");
             //oh.setSaveToDisk(true);
-            oh.setFromDisk(true);
-            oh.setPathToData("/home/alberto/.vdkcr/OAI/harvest/NKC/2014/08/28/09/20/45");
-            
+//            oh.setFromDisk(true);
+//            oh.setPathToData("/home/alberto/.vdkcr/OAI/harvest/NKC/2014/08/28/09/20/45");
+
             oh.harvest();
 
             //oh.harvest("-cfgFile nkp_vdk -dontIndex -fromDisk ", null, null);
@@ -475,104 +482,14 @@ public class OAIHarvester {
         }
 
     }
-
-    /**
-     * @param metadataPrefix the metadataPrefix to set
-     */
-    public void setMetadataPrefix(String metadataPrefix) {
-        this.metadataPrefix = metadataPrefix;
-    }
-
-    /**
-     * @param fromDisk the saveToDisk to set
-     */
-    public void setFromDisk(boolean fromDisk) {
-        this.fromDisk = fromDisk;
-    }
-
-    /**
-     * @return the saveToDisk
-     */
-    public boolean isSaveToDisk() {
-        return saveToDisk;
-    }
-
-    /**
-     * @param saveToDisk the saveToDisk to set
-     */
-    public void setSaveToDisk(boolean saveToDisk) {
-        this.saveToDisk = saveToDisk;
-    }
-
-    /**
-     * @param from the from to set
-     */
-    public void setFrom(String from) {
-        this.from = from;
-    }
-
-    /**
-     * @param to the to to set
-     */
-    public void setTo(String to) {
-        this.to = to;
-    }
-
-    /**
-     * @param pathToData the from to set
-     */
-    public void setPathToData(String pathToData) {
-        this.pathToData = pathToData;
-    }
-
-    /**
-     * @param fullIndex the fullIndex to set
-     */
-    public void setFullIndex(boolean fullIndex) {
-        this.fullIndex = fullIndex;
-    }
-
+    
     /**
      * @param resumptionToken the resumptionToken to set
      */
     public void setResumptionToken(String resumptionToken) {
         this.resumptionToken = resumptionToken;
     }
-
-    /**
-     * @param onlyIdentifiers the onlyIdentifiers to set
-     */
-    public void setOnlyIdentifiers(boolean onlyIdentifiers) {
-        this.onlyIdentifiers = onlyIdentifiers;
-    }
-
-    /**
-     * @param onlyHarvest the onlyHarvest to set
-     */
-    public void setOnlyHarvest(boolean onlyHarvest) {
-        this.onlyHarvest = onlyHarvest;
-    }
-
-    /**
-     * @param maxDocuments the startIndex to set
-     */
-    public void setMaxDocuments(int maxDocuments) {
-        this.maxDocuments = maxDocuments;
-    }
-
-    /**
-     * @param continueOnDocError the onlyHarvest to set
-     */
-    public void setContinueOnDocError(boolean continueOnDocError) {
-        this.continueOnDocError = continueOnDocError;
-    }
-
-    /**
-     * @param startIndex the startIndex to set
-     */
-    public void setStartIndex(int startIndex) {
-        this.startIndex = startIndex;
-    }
+    
 
     /**
      *
@@ -595,25 +512,23 @@ public class OAIHarvester {
             String error = xmlReader.getNodeValue(node, "/oai:error/@code");
             if (error == null || error.equals("")) {
                 ZaznamData oldZaznam = getZaznam(identifier);
-                
-                
 
                 String urlZdroje = opts.getString("baseUrl")
                         + "?verb=GetRecord&identifier=" + identifier
-                        + "&metadataPrefix=" + metadataPrefix
+                        + "&metadataPrefix=" + jobData.getMetadataPrefix()
                         + "#set=" + opts.getString("set");
 
                 if ("deleted".equals(xmlReader.getNodeValue(node, "./oai:header/@status"))) {
-                    if (this.fullIndex) {
+                    if (jobData.isFullIndex()) {
                         logger.log(Level.FINE, "Skip deleted record when fullindex");
                         return;
                     }
                     //zpracovat deletes
                     if (!this.isDontIndex()) {
                         removeZaznam(identifier);
-                        if(oldZaznam != null){
+                        if (oldZaznam != null) {
                             indexer.reindexDoc(conn, oldZaznam.getUniqueCode());
-                           
+
                         }
                     }
                 } else {
@@ -644,14 +559,14 @@ public class OAIHarvester {
                     zaznam.sourceXML = xmlStr;
 
                     try {
-                        if(oldZaznam == null){
+                        if (oldZaznam == null) {
                             zaznam.insert();
-                        }else{
+                        } else {
                             zaznam.update(oldZaznam.getId());
                         }
                         currentDocsSent++;
                     } catch (Exception ex) {
-                        if (this.continueOnDocError) {
+                        if (jobData.isContinueOnDocError()) {
                             errorLogFile.newLine();
                             errorLogFile.write("Error writing docs to db. Id: " + identifier);
                             errorLogFile.flush();
@@ -663,7 +578,7 @@ public class OAIHarvester {
 
                     //try {
                     if (!this.isDontIndex()) {
-                        if(oldZaznam != null && oldZaznam.getUniqueCode().equals(zaznam.uniqueCode)){
+                        if (oldZaznam != null && oldZaznam.getUniqueCode().equals(zaznam.uniqueCode)) {
                             indexer.reindexDoc(conn, oldZaznam.getUniqueCode());
                         }
                         if (oldZaznam != null) {
@@ -680,12 +595,12 @@ public class OAIHarvester {
             }
         }
     }
-    
-    private ZaznamData getZaznam(String identifier) throws SQLException{
+
+    private ZaznamData getZaznam(String identifier) throws SQLException {
         ZaznamData ret = null;
         psZaznam.setString(1, identifier);
         ResultSet rs = psZaznam.executeQuery();
-        if(rs.next()){
+        if (rs.next()) {
             ret = new ZaznamData();
             ret.setId(rs.getInt(1));
             ret.setUniqueCode(rs.getString(2));
@@ -694,11 +609,10 @@ public class OAIHarvester {
         return ret;
     }
 
-    
-    private void removeZaznam(String identifier) throws SQLException{
+    private void removeZaznam(String identifier) throws SQLException {
         psRemoveZaznam.setString(1, identifier);
         psRemoveZaznam.executeUpdate();
-        
+
     }
 
     private String typDokumentu(String leader) {
@@ -756,8 +670,10 @@ public class OAIHarvester {
     }
 
     private static class ZaznamData {
+
         private String uniqueCode;
         private int id;
+
         public ZaznamData() {
         }
 
