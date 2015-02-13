@@ -4,7 +4,6 @@ import cz.incad.vdkcommon.Bohemika;
 import cz.incad.vdkcommon.DbUtils;
 import cz.incad.vdkcommon.xml.XMLReader;
 import cz.incad.vdkcommon.Options;
-import cz.incad.vdkcommon.Interval;
 import cz.incad.vdkcommon.Slouceni;
 import cz.incad.vdkcommon.db.Zaznam;
 import cz.incad.vdkcommon.solr.Indexer;
@@ -24,31 +23,14 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONObject;
-import org.quartz.CronScheduleBuilder;
-import org.quartz.CronTrigger;
-import static org.quartz.DateBuilder.evenMinuteDate;
-import org.quartz.JobBuilder;
-import org.quartz.JobDataMap;
-import org.quartz.JobDetail;
-import org.quartz.Scheduler;
-import org.quartz.SchedulerException;
-import org.quartz.SchedulerFactory;
-import org.quartz.Trigger;
-import org.quartz.TriggerBuilder;
-import static org.quartz.TriggerBuilder.newTrigger;
-import org.quartz.core.jmx.JobDataMapSupport;
-import org.quartz.impl.StdSchedulerFactory;
 
 /**
  *
@@ -72,9 +54,8 @@ public class OAIHarvester {
     BufferedWriter errorLogFile;
 
     
-    private String from;
-    private String to;
-    private String resumptionToken = null;
+    
+    //private String jobData.getResumptionToken() = null;
     
     String configFile;
 
@@ -90,9 +71,9 @@ public class OAIHarvester {
 
     Zaznam zaznam;
 
-    public OAIHarvester(String configFile) throws Exception {
+    public OAIHarvester(String name, String configFile) throws Exception {
         this.configFile = configFile;
-        this.jobData = new HarvesterJobData(configFile);
+        this.jobData = new HarvesterJobData(name, configFile);
         init();
     }
 
@@ -102,10 +83,10 @@ public class OAIHarvester {
         init();
     }
 
-    public OAIHarvester(Connection conn, String configFile) throws Exception {
+    public OAIHarvester(String name, Connection conn, String configFile) throws Exception {
         this.configFile = configFile;
         this.conn = conn;
-        this.jobData = new HarvesterJobData(configFile);
+        this.jobData = new HarvesterJobData(name, configFile);
         init();
     }
 
@@ -201,6 +182,7 @@ public class OAIHarvester {
             conn = DbUtils.getConnection();
             psReindex = conn.prepareStatement(sqlReindex);
             psZaznam = conn.prepareStatement(sqlZaznam);
+            psRemoveZaznam = conn.prepareStatement(sqlRemoveZaznam);
 
             zaznam = new Zaznam(conn);
             logFile = new BufferedWriter(new FileWriter(jobData.getHomeDir() + "logs" + File.separator + configFile + ".log"));
@@ -213,9 +195,9 @@ public class OAIHarvester {
                 getRecordsFromDisk();
             } else {
                 File updateTimeFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
-                if (resumptionToken != null) {
-                    logger.log(Level.INFO, "updating with resumptionToken: {0}", resumptionToken);
-                    getRecordWithResumptionToken(this.resumptionToken);
+                if (jobData.getResumptionToken() != null) {
+                    logger.log(Level.INFO, "updating with resumptionToken: {0}", jobData.getResumptionToken());
+                    getRecordWithResumptionToken(jobData.getResumptionToken());
                 } else {
                     if (jobData.isFullIndex()) {
                         jobData.setFrom(getInitialDate());
@@ -227,8 +209,8 @@ public class OAIHarvester {
                             jobData.setFrom(getInitialDate());
                         }
                     }
-                    logger.log(Level.INFO, "updating from: " + from);
-                    update(from);
+                    logger.log(Level.INFO, "updating from: " + jobData.getFrom());
+                    update(jobData.getFrom());
                 }
             }
 
@@ -278,10 +260,10 @@ public class OAIHarvester {
         Date date = new Date();
         //jobData.getSdfoai().setTimeZone(TimeZone.getTimeZone("GMT"));
 
-        if (this.to == null) {
+        if (jobData.getTo() == null) {
             to = jobData.getSdfoai().format(date);
         } else {
-            to = this.to;
+            to = jobData.getTo();
         }
         Date final_date = jobData.getSdfoai().parse(to);
         Date current = c_to.getTime();
@@ -331,9 +313,9 @@ public class OAIHarvester {
                 until,
                 jobData.getMetadataPrefix(),
                 opts.getString("set"));
-        resumptionToken = getRecords(query);
-        while (resumptionToken != null && !resumptionToken.equals("")) {
-            resumptionToken = getRecords("?verb=" + opts.getString("verb") + "&resumptionToken=" + resumptionToken);
+        jobData.setResumptionToken(getRecords(query));
+        while (jobData.getResumptionToken() != null && !jobData.getResumptionToken().equals("")) {
+            jobData.setResumptionToken(getRecords("?verb=" + opts.getString("verb") + "&resumptionToken=" + jobData.getResumptionToken()));
         }
     }
 
@@ -342,6 +324,16 @@ public class OAIHarvester {
         // check interrupted thread
         if (Thread.currentThread().isInterrupted()) {
             logger.log(Level.INFO, "HARVESTER INTERRUPTED");
+            if (conn != null && !conn.isClosed()) {
+                conn.close();
+            }
+            throw new InterruptedException();
+        }
+        if (jobData.isInterrupted()) {
+            logger.log(Level.INFO, "HARVESTER INTERRUPTED");
+            if (conn != null && !conn.isClosed()) {
+                conn.close();
+            }
             throw new InterruptedException();
         }
 
@@ -459,7 +451,7 @@ public class OAIHarvester {
                     "jdbc:postgresql://localhost:5432/vdk",
                     "vdk",
                     "vdk");
-            OAIHarvester oh = new OAIHarvester(conn, "nkc_vdk");
+            OAIHarvester oh = new OAIHarvester("NKP", conn, "nkc_vdk");
             //oh.setSaveToDisk(true);
 //            oh.setFromDisk(true);
 //            oh.setPathToData("/home/alberto/.vdkcr/OAI/harvest/NKC/2014/08/28/09/20/45");
@@ -468,11 +460,11 @@ public class OAIHarvester {
 
             //oh.harvest("-cfgFile nkp_vdk -dontIndex -fromDisk ", null, null);
             //oh.harvest("-cfgFile VKOL -dontIndex -saveToDisk -onlyHarvest", null, null);201304191450353201304220725599VKOLOAI:VKOL-M
-            //oh.harvest("-cfgFile VKOL -dontIndex -saveToDisk -onlyHarvest resumptionToken 201304191450353201304220725599VKOLOAI:VKOL-M", null, null);
+            //oh.harvest("-cfgFile VKOL -dontIndex -saveToDisk -onlyHarvest jobData.getResumptionToken() 201304191450353201304220725599VKOLOAI:VKOL-M", null, null);
             //oh.harvest("-cfgFile MZK01-VDK -dontIndex -saveToDisk -onlyHarvest", null, null);
             //oh.harvest("-cfgFile MZK03-VDK -dontIndex -saveToDisk -onlyHarvest", null, null);
             //oh.harvest("-cfgFile nkp_vdk -dontIndex -saveToDisk -onlyHarvest ", null, null);
-            //oh.harvest("-cfgFile nkp_vdk -dontIndex -saveToDisk -onlyHarvest -resumptionToken 201305160612203201305162300009NKC-VDK:NKC-VDKM", null, null);
+            //oh.harvest("-cfgFile nkp_vdk -dontIndex -saveToDisk -onlyHarvest -jobData.getResumptionToken() 201305160612203201305162300009NKC-VDK:NKC-VDKM", null, null);
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
         } finally {
@@ -482,14 +474,6 @@ public class OAIHarvester {
         }
 
     }
-    
-    /**
-     * @param resumptionToken the resumptionToken to set
-     */
-    public void setResumptionToken(String resumptionToken) {
-        this.resumptionToken = resumptionToken;
-    }
-    
 
     /**
      *
@@ -498,8 +482,9 @@ public class OAIHarvester {
      * @param index the index of the node in the xml file
      */
     private void processRecord(Node node, String identifier, int index) throws InterruptedException, Exception {
+            logger.log(Level.INFO, "Processing record {0} ...", identifier);
         // check interrupted thread
-        if (Thread.currentThread().isInterrupted()) {
+        if (Thread.currentThread().isInterrupted() ) {
 
             logger.log(Level.INFO, "HARVESTER INTERRUPTED");
             throw new InterruptedException();

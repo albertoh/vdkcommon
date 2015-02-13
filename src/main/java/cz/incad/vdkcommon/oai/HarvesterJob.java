@@ -5,12 +5,14 @@
  */
 package cz.incad.vdkcommon.oai;
 
+import cz.incad.vdkcommon.VDKScheduler;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import static org.quartz.DateBuilder.evenMinuteDate;
+import org.quartz.InterruptableJob;
 import org.quartz.Job;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
@@ -22,6 +24,7 @@ import org.quartz.SchedulerException;
 import org.quartz.SchedulerFactory;
 import org.quartz.Trigger;
 import static org.quartz.TriggerBuilder.newTrigger;
+import org.quartz.UnableToInterruptJobException;
 import org.quartz.core.jmx.JobDataMapSupport;
 import org.quartz.impl.StdSchedulerFactory;
 
@@ -29,9 +32,10 @@ import org.quartz.impl.StdSchedulerFactory;
  *
  * @author alberto
  */
-public class HarvesterJob implements Job {
+public class HarvesterJob implements InterruptableJob {
 
     private static final Logger LOGGER = Logger.getLogger(HarvesterJob.class.getName());
+    HarvesterJobData jobdata;
 
     @Override
     public void execute(JobExecutionContext jec) throws JobExecutionException {
@@ -49,7 +53,7 @@ public class HarvesterJob implements Job {
             }
 
             JobDataMap data = jec.getJobDetail().getJobDataMap();
-            HarvesterJobData jobdata = (HarvesterJobData) data.get("jobdata");
+            jobdata = (HarvesterJobData) data.get("jobdata");
 
             OAIHarvester oh = new OAIHarvester(jobdata);
             
@@ -69,8 +73,7 @@ public class HarvesterJob implements Job {
         try {
             String name = jobdata.getName();
             Scheduler sched;
-            SchedulerFactory sf = new StdSchedulerFactory();
-            sched = sf.getScheduler();
+            sched = VDKScheduler.getInstance().getScheduler();
 
             Map<String, Object> map = new HashMap<String, Object>();
 
@@ -96,12 +99,18 @@ public class HarvesterJob implements Job {
             sched.scheduleJob(job, trigger);
             LOGGER.log(Level.INFO, "Cron for {0} scheduled with {1}", new Object[]{name, runTime});
 
-            sched.start();
+            //sched.start();
 
         } catch (SchedulerException ex) {
             LOGGER.log(Level.SEVERE, null, ex);
         }
 
+    }
+
+    @Override
+    public void interrupt() throws UnableToInterruptJobException {
+        //Thread.currentThread().interrupt();
+        jobdata.setInterrupted(true);
     }
 
 }

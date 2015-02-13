@@ -7,14 +7,11 @@ package cz.incad.vdkcommon.oai;
 
 import cz.incad.vdkcommon.Interval;
 import cz.incad.vdkcommon.Options;
-import cz.incad.vdkcommon.xml.XMLReader;
-import java.io.BufferedWriter;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Iterator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.xml.transform.TransformerFactory;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONObject;
 
@@ -26,21 +23,6 @@ public class HarvesterJobData {
     
     private static Logger logger = Logger.getLogger(HarvesterJobData.class.getName());
 
-    /**
-     * @return the logger
-     */
-    public static Logger getLogger() {
-        return logger;
-    }
-
-    /**
-     * @param aLogger the logger to set
-     */
-    public static void setLogger(Logger aLogger) {
-        logger = aLogger;
-    }
-    private String conf;
-    
     
     private SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd/HH");
     private SimpleDateFormat sdfoai;
@@ -69,9 +51,11 @@ public class HarvesterJobData {
     private String name;
     private int interval;
     
-    public HarvesterJobData(String conf) throws Exception{
-        this.conf = conf;
-        this.name = conf;
+    private boolean interrupted = false;
+    
+    public HarvesterJobData(String name, String conf) throws Exception{
+        this.configFile = conf;
+        this.name = name;
         init();
     }
     
@@ -80,7 +64,7 @@ public class HarvesterJobData {
         File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/oai.json"));
 
         String json = FileUtils.readFileToString(fdef, "UTF-8");
-        setOpts(new JSONObject(json));
+        opts = new JSONObject(json);
         File f = new File(path);
         if (f.exists() && f.canRead()) {
             json = FileUtils.readFileToString(f, "UTF-8");
@@ -88,8 +72,8 @@ public class HarvesterJobData {
             Iterator keys = confCustom.keys();
             while (keys.hasNext()) {
                 String key = (String) keys.next();
-                getLogger().log(Level.INFO, "key {0} will be overrided", key);
-                getOpts().put(key, confCustom.get(key));
+                logger.log(Level.INFO, "key {0} will be overrided", key);
+                opts.put(key, confCustom.get(key));
             }
         }
 
@@ -102,32 +86,18 @@ public class HarvesterJobData {
         this.setPathToData(getOpts().getString("indexDirectory"));
 
         
-        
+        this.sdfoai = new SimpleDateFormat(opts.getString("oaiDateFormat"));
+        this.sdf = new SimpleDateFormat(opts.getString("filePathFormat"));
 
-        setSdfoai(new SimpleDateFormat(getOpts().getString("oaiDateFormat")));
-        setSdf(new SimpleDateFormat(getOpts().getString("filePathFormat")));
+        
 
         this.setMetadataPrefix(getOpts().getString("metadataPrefix"));
 
         setInterval(Interval.parseString(getOpts().getString("interval")));
         
 
-        getLogger().info("HarvesterJobData initialized");
+        logger.info("HarvesterJobData initialized");
 
-    }
-
-    /**
-     * @return the conf
-     */
-    public String getConf() {
-        return conf;
-    }
-
-    /**
-     * @param conf the conf to set
-     */
-    public void setConf(String conf) {
-        this.conf = conf;
     }
 
     /**
@@ -422,5 +392,19 @@ public class HarvesterJobData {
      */
     public void setInterval(int interval) {
         this.interval = interval;
+    }
+
+    /**
+     * @return the interrupted
+     */
+    public boolean isInterrupted() {
+        return interrupted;
+    }
+
+    /**
+     * @param interrupted the interrupted to set
+     */
+    public void setInterrupted(boolean interrupted) {
+        this.interrupted = interrupted;
     }
 }
