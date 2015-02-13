@@ -196,11 +196,7 @@ public class Indexer {
             indexer.reindex(conn);
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
-        } finally {
-            if (conn != null && !conn.isClosed()) {
-                conn.close();
-            }
-        }
+        } 
     }
 
 }
