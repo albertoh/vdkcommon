@@ -71,9 +71,9 @@ public class OAIHarvester {
 
     Zaznam zaznam;
 
-    public OAIHarvester(String name, String configFile) throws Exception {
+    public OAIHarvester(String configFile) throws Exception {
         this.configFile = configFile;
-        this.jobData = new HarvesterJobData(name, configFile);
+        this.jobData = new HarvesterJobData(configFile);
         init();
     }
 
@@ -83,10 +83,10 @@ public class OAIHarvester {
         init();
     }
 
-    public OAIHarvester(String name, Connection conn, String configFile) throws Exception {
+    public OAIHarvester(Connection conn, String configFile) throws Exception {
         this.configFile = configFile;
         this.conn = conn;
-        this.jobData = new HarvesterJobData(name, configFile);
+        this.jobData = new HarvesterJobData(configFile);
         init();
     }
 
@@ -451,7 +451,7 @@ public class OAIHarvester {
                     "jdbc:postgresql://localhost:5432/vdk",
                     "vdk",
                     "vdk");
-            OAIHarvester oh = new OAIHarvester("NKP", conn, "nkc_vdk");
+            OAIHarvester oh = new OAIHarvester(conn, "nkc_vdk");
             //oh.setSaveToDisk(true);
 //            oh.setFromDisk(true);
 //            oh.setPathToData("/home/alberto/.vdkcr/OAI/harvest/NKC/2014/08/28/09/20/45");

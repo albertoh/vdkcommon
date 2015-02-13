@@ -53,9 +53,8 @@ public class HarvesterJobData {
     
     private boolean interrupted = false;
     
-    public HarvesterJobData(String name, String conf) throws Exception{
+    public HarvesterJobData(String conf) throws Exception{
         this.configFile = conf;
-        this.name = name;
         init();
     }
     
@@ -77,6 +76,7 @@ public class HarvesterJobData {
             }
         }
 
+        this.name = opts.getString("knihovna");
         this.setHomeDir(getOpts().optString("homeDir", ".vdkcr") + File.separator);
         this.setSaveToDisk(getOpts().optBoolean("saveToDisk", true));
         this.setFullIndex(getOpts().optBoolean("fullIndex", false));

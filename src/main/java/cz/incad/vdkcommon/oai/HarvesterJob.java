@@ -1,8 +1,4 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
+
 package cz.incad.vdkcommon.oai;
 
 import cz.incad.vdkcommon.VDKScheduler;
@@ -13,7 +9,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import static org.quartz.DateBuilder.evenMinuteDate;
 import org.quartz.InterruptableJob;
-import org.quartz.Job;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
@@ -21,12 +16,10 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
-import org.quartz.SchedulerFactory;
 import org.quartz.Trigger;
 import static org.quartz.TriggerBuilder.newTrigger;
 import org.quartz.UnableToInterruptJobException;
 import org.quartz.core.jmx.JobDataMapSupport;
-import org.quartz.impl.StdSchedulerFactory;
 
 /**
  *
@@ -84,12 +77,12 @@ public class HarvesterJob implements InterruptableJob {
             Date runTime = evenMinuteDate(new Date());
             // Trigger the job to run on the next round minute   
             Trigger trigger = newTrigger()
-                    .withIdentity("job_" + name, "Zdroj")
+                    .withIdentity("job_" + name)
                     .startAt(runTime)
                     .build();
 
             JobDetail job = JobBuilder.newJob(HarvesterJob.class)
-                    .withIdentity("job_" + name, "Zdroj")
+                    .withIdentity("job_" + name)
                     .setJobData(data)
                     .build();
             if (sched.checkExists(job.getKey())) {
@@ -98,8 +91,6 @@ public class HarvesterJob implements InterruptableJob {
 
             sched.scheduleJob(job, trigger);
             LOGGER.log(Level.INFO, "Cron for {0} scheduled with {1}", new Object[]{name, runTime});
-
-            //sched.start();
 
         } catch (SchedulerException ex) {
             LOGGER.log(Level.SEVERE, null, ex);
