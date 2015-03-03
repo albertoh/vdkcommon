@@ -28,6 +28,11 @@ public class Options {
         }
         return _sharedInstance;
     }
+    
+    public synchronized static void resetInstance(){
+        _sharedInstance = null;
+        LOGGER.log(Level.INFO, "Options reseted");
+    }
 
     public Options() throws IOException, JSONException {
         String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + "conf.json";
@@ -56,6 +61,14 @@ public class Options {
 
     public String getString(String key) {
         return conf.optString(key);
+    }
+
+    public boolean getBoolean(String key, boolean defVal) {
+        return conf.optBoolean(key, defVal);
+    }
+
+    public boolean getBoolean(String key) {
+        return conf.optBoolean(key);
     }
 
     public int getInt(String key, int defVal) {

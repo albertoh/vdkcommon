@@ -25,9 +25,14 @@ public class SolrIndexerCommiter {
 
     public static SolrServer getServer() throws IOException {
         Options opts = Options.getInstance();
+        return getServer(opts.getString("solrCore", "vdk_md5"));
+    }
+    
+    public static SolrServer getServer(String core) throws IOException {
+        Options opts = Options.getInstance();
         HttpSolrServer server = new HttpSolrServer(String.format("%s/%s/", 
                 opts.getString("solrHost", "http://localhost:8080/solr"), 
-                opts.getString("solrCore", "vdk_md5")));
+                core));
         server.setMaxRetries(1); // defaults to 0.  > 1 not recommended.
         server.setConnectionTimeout(5000); // 5 seconds to establish TCP
         

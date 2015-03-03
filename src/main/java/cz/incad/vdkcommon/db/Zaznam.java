@@ -1,6 +1,8 @@
 package cz.incad.vdkcommon.db;
 
 import cz.incad.vdkcommon.DbUtils;
+import cz.incad.vdkcommon.SolrIndexerCommiter;
+import cz.incad.vdkcommon.solr.Indexer;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -14,7 +16,6 @@ import java.util.logging.Logger;
 public class Zaznam {
 
     private static final Logger logger = Logger.getLogger(Zaznam.class.getName());
-
     public String typDokumentu;
     public String hlavniNazev;
     public String ccnb;
@@ -26,55 +27,72 @@ public class Zaznam {
     public String uniqueCode;
     public String codeType;
     public boolean bohemika;
-    
+
     PreparedStatement psInsert;
     PreparedStatement psUpdate;
-    
-    public Zaznam(Connection conn) throws SQLException{
+    Indexer indexer;
+
+    public Zaznam(Connection conn) throws SQLException, Exception {
         StringBuilder sql = new StringBuilder("insert into ZAZNAM ");
         boolean isOracle = DbUtils.isOracle(conn);
-        
+
         sql.append(" (knihovna, identifikator, uniqueCode, codeType, url, hlavniNazev, typDokumentu, bohemika, sourceXML, update_timestamp");
-        if(isOracle){
+        if (isOracle) {
             sql.append(",zaznam_id");
         }
         sql.append(")");
         sql.append(" values (?,?,?,?,?,?,?,?,?");
-        if(isOracle){
+        if (isOracle) {
             sql.append(", sysdate, Zaznam_ID_SQ.nextval");
-        }else{
+        } else {
             sql.append(",NOW()");
-            
+
         }
         sql.append(")");
         psInsert = conn.prepareStatement(sql.toString());
-        
+
         StringBuilder sqlUpdate = new StringBuilder("update ZAZNAM ");
         sqlUpdate.append("set knihovna=?, identifikator=?, ")
                 .append("uniqueCode=?, codeType=?, url=?, hlavniNazev=?, typDokumentu=?, bohemika=?, ")
                 .append("sourceXML=?, update_timestamp=");
-        
-        if(isOracle){
+
+        if (isOracle) {
             sqlUpdate.append("sysdate");
-        }else{
+        } else {
             sqlUpdate.append("NOW()");
         }
         sqlUpdate.append(" where zaznam_id=?");
         psUpdate = conn.prepareStatement(sqlUpdate.toString());
+        indexer = new Indexer();
     }
-    
-    public void clearParams() throws SQLException{
+
+    public void clearParams() throws SQLException {
         psUpdate.clearParameters();
         psInsert.clearParameters();
     }
-    
+
     public void update(int zaznamId) throws SQLException {
         psUpdate.setInt(psUpdate.getParameterMetaData().getParameterCount(), zaznamId);
         process(psUpdate);
     }
 
     public void insert() throws SQLException {
-            process(psInsert);
+        process(psInsert);
+    }
+    
+    
+
+    public void remove(String identifier) throws Exception {
+        indexer.removeDoc(identifier);
+        
+    }
+
+
+    public void store() throws Exception {
+        indexer.store(this);
+        
+        logger.log(Level.INFO, "Doc {0} indexed", identifikator);
+
     }
 
     public void process(PreparedStatement ps) throws SQLException {

@@ -25,6 +25,12 @@ public class IndexerQuery {
         return rsp.getResults();
     }
 
+    public static SolrDocumentList query(String core, SolrQuery query) throws SolrServerException, IOException {
+        SolrServer server = SolrIndexerCommiter.getServer(core);
+        QueryResponse rsp = server.query(query);
+        return rsp.getResults();
+    }
+
     public static SolrDocumentList queryOneField(String q, String[] fields, String[] fq) throws SolrServerException, IOException {
         SolrServer server = SolrIndexerCommiter.getServer();
         SolrQuery query = new SolrQuery();

@@ -114,7 +114,10 @@ public class DbUtils {
                     id = rs.getInt("zaznam_id");
                     logger.log(Level.INFO, "processing record " + id);
                     JSONObject slouceni = Slouceni.fromXml(rs.getString("sourceXML"));
-                    logger.log(Level.INFO, "uniqueCode: {0}", slouceni.getString("docCode"));
+                    logger.log(Level.INFO, "uniqueCode: {0}, type: {1}", 
+                            new Object[]{slouceni.getString("docCode"),
+                                slouceni.getString("codeType")
+                            });
 
                     ups.setString(1, slouceni.getString("docCode"));
                     ups.setString(2, slouceni.getString("codeType"));

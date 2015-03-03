@@ -79,6 +79,7 @@ public class HarvesterJobData {
         this.name = opts.getString("knihovna");
         this.setHomeDir(getOpts().optString("homeDir", ".vdkcr") + File.separator);
         this.setSaveToDisk(getOpts().optBoolean("saveToDisk", true));
+        this.setDontIndex(getOpts().optBoolean("dontIndex", true));
         this.setFullIndex(getOpts().optBoolean("fullIndex", false));
         this.setOnlyHarvest(getOpts().optBoolean("onlyHarvest", false));
         this.setStartIndex(getOpts().optInt("startIndex", -1));

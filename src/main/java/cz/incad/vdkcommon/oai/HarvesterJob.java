@@ -2,6 +2,7 @@
 package cz.incad.vdkcommon.oai;
 
 import cz.incad.vdkcommon.VDKScheduler;
+import cz.incad.vdkcommon.solr.Indexer;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -51,6 +52,9 @@ public class HarvesterJob implements InterruptableJob {
             OAIHarvester oh = new OAIHarvester(jobdata);
             
             oh.harvest();
+            
+            Indexer indexer =  new Indexer();
+            indexer.update();
 
             LOGGER.log(Level.INFO, "jobKey: {0}", jobKey);
 

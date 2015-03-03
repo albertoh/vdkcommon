@@ -10,7 +10,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.apache.commons.validator.routines.ISBNValidator;
 import org.json.JSONObject;
 
 import au.com.bytecode.opencsv.CSVReader;
@@ -188,10 +187,10 @@ public class Slouceni {
 
             //ISBN
             String pole = map.get("isbn");
-            ISBNValidator val = new ISBNValidator();
+            ISBN val = new ISBN();
 
             if (pole != null && !pole.equals("")) {
-                pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
+                //pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
                 if (!"".equals(pole) && val.isValid(pole)) {
                     j.put("docCode", MD5.generate(new String[]{pole}));
                     j.put("codeType", "isbn");
@@ -202,7 +201,7 @@ public class Slouceni {
             //ISSN
             pole = map.get("issn");
             if (pole != null && !pole.equals("")) {
-                pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
+                //pole = pole.toUpperCase().substring(0, Math.min(13, pole.length()));
                 if (!"".equals(pole) && val.isValid(pole)) {
                     j.put("docCode", MD5.generate(new String[]{pole}));
                     j.put("codeType", "issn");
@@ -373,6 +372,38 @@ public class Slouceni {
         }
         return retVal;
     }
+    
+    private static final char[] SEPARATORS = {'-', ' '};
+    private static final String[] PREFIXES = {"ISBN ", "ISBN: ", "ISBN:"};
+    
+    private static String removePrefix(String original) {
+        for (String prefix : PREFIXES) {
+            if (original.startsWith(prefix)) {
+                return original.substring(prefix.length());
+            }
+        }
+        return original;
+    }
+
+    private static String removeSeparators(String original) {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < original.length(); i++) {
+            char character = original.charAt(i);
+            if (!isSeparator(character)) {
+                result.append(character);
+            }
+        }
+        return result.toString();
+    }
+
+    private static boolean isSeparator(char character) {
+        for (char separator : SEPARATORS) {
+            if (character == separator) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public static void main(String[] args) throws IOException {
         String s = "\"\"	\"\"	\"cnb000245226\"	\"Hlubinami pravěku /\"	\"\"	\"\"	\"1. vyd.\"	\"Josef,, Augusta\"	\"\"	\"\"	\"Praha :Mladá fronta,1956\"";
@@ -381,6 +412,17 @@ public class Slouceni {
         Map map = Slouceni.csvToMap(s);
         System.out.println(map);
         System.out.println(Slouceni.generateMD5(map));
+        
+        ISBN val = new ISBN();
+        String isbn = "978-80-86526-78-2 (váz.) : ";
+        System.out.println(isbn + ": " + val.isValid(isbn));
+        isbn = "lkjklj(brož) :";
+        System.out.println(isbn + ": " + val.isValid(isbn));
+        isbn = "80-7112-003-0 :";
+        System.out.println(isbn + ": " + val.isValid(isbn));
+        isbn = "80-7179-001-X (brož) :";
+        System.out.println(isbn + ": " + val.isValid(isbn));
+        
     }
 
     

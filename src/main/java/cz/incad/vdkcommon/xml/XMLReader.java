@@ -42,19 +42,20 @@ public class XMLReader {
     private XPath xpath;
     private Document doc;
     boolean nsAware = false;
+    DocumentBuilder builder;
 
-    public XMLReader() {
+    public XMLReader() throws ParserConfigurationException {
         nsAware = true;
 
             XPathFactory factory = XPathFactory.newInstance();
             xpath = factory.newXPath();
             xpath.setNamespaceContext(new VDKNamespaceContext());
+            DocumentBuilderFactory domFactory = DocumentBuilderFactory.newInstance();
+            domFactory.setNamespaceAware(nsAware); // never forget this!
+            builder = domFactory.newDocumentBuilder();
     }
 
     public void loadXml(String xml) throws ParserConfigurationException, SAXException, IOException {
-            DocumentBuilderFactory domFactory = DocumentBuilderFactory.newInstance();
-            domFactory.setNamespaceAware(nsAware); // never forget this!
-            DocumentBuilder builder = domFactory.newDocumentBuilder();
 
             InputSource source = new InputSource(new StringReader(xml));
             doc = builder.parse(source);
@@ -66,9 +67,6 @@ public class XMLReader {
 
     public void loadXmlFromFile(File file) {
         try {
-            DocumentBuilderFactory domFactory = DocumentBuilderFactory.newInstance();
-            domFactory.setNamespaceAware(nsAware); // never forget this!
-            DocumentBuilder builder = domFactory.newDocumentBuilder();
 
             InputSource source = new InputSource(new FileInputStream(file));
             doc = builder.parse(source);
@@ -79,9 +77,7 @@ public class XMLReader {
     }
 
     public void readUrl(String urlString) throws ParserConfigurationException, MalformedURLException, IOException, SAXException {
-            DocumentBuilderFactory domFactory = DocumentBuilderFactory.newInstance();
-            domFactory.setNamespaceAware(nsAware); // never forget this!
-            DocumentBuilder builder = domFactory.newDocumentBuilder();
+            
             URL url = new URL(urlString);
             InputStream stream = url.openStream();
             doc = builder.parse(stream);

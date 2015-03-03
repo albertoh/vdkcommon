@@ -20,15 +20,14 @@ import javax.xml.transform.stream.StreamSource;
 import java.io.*;
 import java.net.URL;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONObject;
 
@@ -48,26 +47,14 @@ public class OAIHarvester {
     int currentIndex = 0;
     
     Transformer xformer;
-
-    
-    BufferedWriter logFile;
-    BufferedWriter errorLogFile;
-
-    
-    
-    //private String jobData.getResumptionToken() = null;
     
     String configFile;
 
-    String sqlReindex = "select sourceXML, bohemika from zaznam where uniqueCode=?";
-    PreparedStatement psReindex;
-    String sqlZaznam = "select zaznam_id, uniquecode from zaznam where identifikator=?";
-    PreparedStatement psZaznam;
-    private boolean dontIndex;
-    String sqlRemoveZaznam = "delete from zaznam where identifikator=?";
-    PreparedStatement psRemoveZaznam;
+    private final String LAST_HARVEST = "last_harvest";
+    JSONObject statusJson;
 
-    Indexer indexer = new Indexer();
+    //Indexer indexer = new Indexer();
+    
 
     Zaznam zaznam;
 
@@ -122,6 +109,11 @@ public class OAIHarvester {
                     logger.log(Level.WARNING, "Can''t create logs directory");
                 }
             }
+            FileHandler logFile;
+            logFile = new FileHandler(jobData.getHomeDir() + "logs" + File.separator + configFile + ".log");
+            logFile.setFormatter(new SimpleFormatter());
+            
+            logger.addHandler(logFile);
 
         } catch (SecurityException ex) {
             logger.log(Level.SEVERE, null, ex);
@@ -180,13 +172,8 @@ public class OAIHarvester {
 
         try {
             conn = DbUtils.getConnection();
-            psReindex = conn.prepareStatement(sqlReindex);
-            psZaznam = conn.prepareStatement(sqlZaznam);
-            psRemoveZaznam = conn.prepareStatement(sqlRemoveZaznam);
 
             zaznam = new Zaznam(conn);
-            logFile = new BufferedWriter(new FileWriter(jobData.getHomeDir() + "logs" + File.separator + configFile + ".log"));
-            errorLogFile = new BufferedWriter(new FileWriter(jobData.getHomeDir() + "logs" + File.separator + configFile + ".error.log"));
 
             long startTime = (new Date()).getTime();
             currentIndex = 0;
@@ -194,7 +181,15 @@ public class OAIHarvester {
             if (jobData.isFromDisk()) {
                 getRecordsFromDisk();
             } else {
-                File updateTimeFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
+                File statusFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
+                
+                if (statusFile.exists()) {
+                    statusJson = new JSONObject(FileUtils.readFileToString(statusFile, "UTF-8"));
+                } else {
+                    statusJson = new JSONObject();
+                    statusJson.put(LAST_HARVEST, getInitialDate());
+                }
+                
                 if (jobData.getResumptionToken() != null) {
                     logger.log(Level.INFO, "updating with resumptionToken: {0}", jobData.getResumptionToken());
                     getRecordWithResumptionToken(jobData.getResumptionToken());
@@ -202,20 +197,16 @@ public class OAIHarvester {
                     if (jobData.isFullIndex()) {
                         jobData.setFrom(getInitialDate());
                     } else {
-                        if (updateTimeFile.exists()) {
-                            BufferedReader in = new BufferedReader(new FileReader(updateTimeFile));
-                            jobData.setFrom(in.readLine());
-                        } else {
-                            jobData.setFrom(getInitialDate());
-                        }
+                        jobData.setFrom(statusJson.optString(LAST_HARVEST, getInitialDate()));
+                        
                     }
                     logger.log(Level.INFO, "updating from: " + jobData.getFrom());
                     update(jobData.getFrom());
                 }
             }
 
-            logFile.newLine();
-            logFile.write("Harvest success " + currentDocsSent + " records");
+//            logFile.newLine();
+//            logFile.write("Harvest success " + currentDocsSent + " records");
 
             long timeInMiliseconds = (new Date()).getTime() - startTime;
             logger.log(Level.INFO, "HARVEST SUCCESS {0} records", currentDocsSent);
@@ -225,27 +216,26 @@ public class OAIHarvester {
             logger.log(Level.SEVERE, null, ex);
             throw new Exception(ex);
         } finally {
-            try {
-                if (logFile != null) {
-                    logFile.flush();
-                    logFile.close();
-                }
-                if (errorLogFile != null) {
-                    errorLogFile.flush();
-                    errorLogFile.close();
-                }
-            } catch (IOException ex) {
-                logger.log(Level.WARNING, null, ex);
-            }
+//            try {
+//                if (logFile != null) {
+//                    logFile.flush();
+//                    logFile.close();
+//                }
+//                if (errorLogFile != null) {
+//                    errorLogFile.flush();
+//                    errorLogFile.close();
+//                }
+//            } catch (IOException ex) {
+//                logger.log(Level.WARNING, null, ex);
+//            }
         }
         return currentDocsSent;
     }
 
-    private void writeResponseDate(String from) throws FileNotFoundException, IOException {
-        File updateTimeFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
-        BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(updateTimeFile)));
-        out.write(from);
-        out.close();
+    private void writeStatus(String from) throws FileNotFoundException, IOException {
+        statusJson.put(LAST_HARVEST, from);
+        File statusFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
+        FileUtils.writeStringToFile(statusFile, statusJson.toString());
     }
 
     private void update(String from) throws Exception {
@@ -276,16 +266,16 @@ public class OAIHarvester {
         }
         update(jobData.getSdfoai().format(c_from.getTime()), jobData.getSdfoai().format(final_date));
 
-        writeResponseDate(to);
+        writeStatus(to);
 
     }
 
     private void update(String from, String until) throws Exception {
         logger.log(Level.INFO, "Harvesting from: {0} until: {1}", new Object[]{from, until});
         //responseDate = from;
-        writeResponseDate(from);
+        writeStatus(from);
         getRecords(from, until);
-        writeResponseDate(until);
+        writeStatus(until);
     }
 
     private void getRecordWithResumptionToken(String resumptionToken) throws Exception {
@@ -339,15 +329,17 @@ public class OAIHarvester {
 
         String urlString = opts.getString("baseUrl") + query;
         URL url = new URL(urlString.replace("\n", ""));
-        logFile.newLine();
-        logFile.write(url.toString());
-        logFile.flush();
+        logger.log(Level.INFO, "reading url: " + url.toString());
+//        logFile.newLine();
+//        logFile.write(url.toString());
+//        logFile.flush();
         try {
             xmlReader.readUrl(url.toString());
         } catch (Exception ex) {
             logger.log(Level.WARNING, ex.toString());
-            logFile.newLine();
-            logFile.write("retrying url: " + url.toString());
+            logger.log(Level.WARNING, "retrying url: " + url.toString());
+//            logFile.newLine();
+//            logFile.write("retrying url: " + url.toString());
             xmlReader.readUrl(url.toString());
         }
         String error = xmlReader.getNodeValue("//oai:error/@code");
@@ -496,8 +488,7 @@ public class OAIHarvester {
 //            logger.log(Level.INFO, "JSON for identifier {0} is: ", json);
             String error = xmlReader.getNodeValue(node, "/oai:error/@code");
             if (error == null || error.equals("")) {
-                ZaznamData oldZaznam = getZaznam(identifier);
-
+                
                 String urlZdroje = opts.getString("baseUrl")
                         + "?verb=GetRecord&identifier=" + identifier
                         + "&metadataPrefix=" + jobData.getMetadataPrefix()
@@ -509,13 +500,7 @@ public class OAIHarvester {
                         return;
                     }
                     //zpracovat deletes
-                    if (!this.isDontIndex()) {
-                        removeZaznam(identifier);
-                        if (oldZaznam != null) {
-                            indexer.reindexDoc(conn, oldZaznam.getUniqueCode());
-
-                        }
-                    }
+                    zaznam.remove(identifier);
                 } else {
 //                    String xmlStr = nodeToString(xmlReader.getNodeElement(), index);
                     String xmlStr = nodeToString(node);
@@ -544,17 +529,13 @@ public class OAIHarvester {
                     zaznam.sourceXML = xmlStr;
 
                     try {
-                        if (oldZaznam == null) {
-                            zaznam.insert();
-                        } else {
-                            zaznam.update(oldZaznam.getId());
-                        }
+                        zaznam.store();
                         currentDocsSent++;
                     } catch (Exception ex) {
                         if (jobData.isContinueOnDocError()) {
-                            errorLogFile.newLine();
-                            errorLogFile.write("Error writing docs to db. Id: " + identifier);
-                            errorLogFile.flush();
+//                            errorLogFile.newLine();
+//                            errorLogFile.write("Error writing docs to db. Id: " + identifier);
+//                            errorLogFile.flush();
                             logger.log(Level.WARNING, "Error writing doc to db. Id: {0}", identifier);
                         } else {
                             throw new Exception(ex);
@@ -562,17 +543,9 @@ public class OAIHarvester {
                     }
 
                     //try {
-                    if (!this.isDontIndex()) {
-                        if (oldZaznam != null && oldZaznam.getUniqueCode().equals(zaznam.uniqueCode)) {
-                            indexer.reindexDoc(conn, oldZaznam.getUniqueCode());
-                        }
-                        if (oldZaznam != null) {
-                            indexer.reindexDoc(conn, zaznam.uniqueCode);
-                        } else {
-                            //indexer.processXML(xmlStr, uniqueCode, codeType, identifier, Bohemika.isBohemika(xmlStr));
-                        }
-
-                    }
+//                    if (!jobData.isDontIndex()) {
+//                        indexer.reindexDoc(zaznam.uniqueCode);
+//                    }
 
                 }
             } else {
@@ -580,26 +553,6 @@ public class OAIHarvester {
             }
         }
     }
-
-    private ZaznamData getZaznam(String identifier) throws SQLException {
-        ZaznamData ret = null;
-        psZaznam.setString(1, identifier);
-        ResultSet rs = psZaznam.executeQuery();
-        if (rs.next()) {
-            ret = new ZaznamData();
-            ret.setId(rs.getInt(1));
-            ret.setUniqueCode(rs.getString(2));
-        }
-        rs.close();
-        return ret;
-    }
-
-    private void removeZaznam(String identifier) throws SQLException {
-        psRemoveZaznam.setString(1, identifier);
-        psRemoveZaznam.executeUpdate();
-
-    }
-
     private String typDokumentu(String leader) {
         if (leader != null && leader.length() > 9) {
             String code = leader.substring(6, 8);
@@ -638,20 +591,6 @@ public class OAIHarvester {
         } else {
             return "none";
         }
-    }
-
-    /**
-     * @return the dontIndex
-     */
-    public boolean isDontIndex() {
-        return dontIndex;
-    }
-
-    /**
-     * @param dontIndex the dontIndex to set
-     */
-    public void setDontIndex(boolean dontIndex) {
-        this.dontIndex = dontIndex;
     }
 
     private static class ZaznamData {
