@@ -1,7 +1,7 @@
 
-package cz.incad.vdkcommon.oai;
+package cz.incad.vdkcommon;
 
-import cz.incad.vdkcommon.VDKScheduler;
+import cz.incad.vdkcommon.oai.*;
 import cz.incad.vdkcommon.solr.Indexer;
 import java.util.Date;
 import java.util.HashMap;
@@ -26,10 +26,10 @@ import org.quartz.core.jmx.JobDataMapSupport;
  *
  * @author alberto
  */
-public class HarvesterJob implements InterruptableJob {
+public class VDKJob implements InterruptableJob {
 
-    private static final Logger LOGGER = Logger.getLogger(HarvesterJob.class.getName());
-    HarvesterJobData jobdata;
+    private static final Logger LOGGER = Logger.getLogger(VDKJob.class.getName());
+    VDKJobData jobdata;
 
     @Override
     public void execute(JobExecutionContext jec) throws JobExecutionException {
@@ -47,22 +47,30 @@ public class HarvesterJob implements InterruptableJob {
             }
 
             JobDataMap data = jec.getJobDetail().getJobDataMap();
-            jobdata = (HarvesterJobData) data.get("jobdata");
+            jobdata = (VDKJobData) data.get("jobdata");
+            jobdata.load();
             jobdata.setInterrupted(false);
 
-            OAIHarvester oh = new OAIHarvester(jobdata);
-            oh.harvest();
+            if(jobdata.isHarvest()){
+                OAIHarvester oh = new OAIHarvester(new HarvesterJobData(jobdata));
+                oh.harvest();
+            }
+            
+            if(!jobdata.isInterrupted() && !jobdata.isIndex()){
+                Indexer indexer =  new Indexer();
+                indexer.update();
+            }
 
             LOGGER.log(Level.INFO, "jobKey: {0}", jobKey);
 
         } catch (SchedulerException ex) {
             LOGGER.log(Level.SEVERE, null, ex);
         } catch (Exception ex) {
-            Logger.getLogger(HarvesterJob.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(VDKJob.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
 
-    public void harvestScheduled(HarvesterJobData jobdata) {
+    public void harvestScheduled(VDKJobData jobdata) {
 
         try {
             String name = jobdata.getName();
@@ -82,7 +90,7 @@ public class HarvesterJob implements InterruptableJob {
                     .startAt(runTime)
                     .build();
 
-            JobDetail job = JobBuilder.newJob(HarvesterJob.class)
+            JobDetail job = JobBuilder.newJob(VDKJob.class)
                     .withIdentity("job_" + name)
                     .setJobData(data)
                     .build();

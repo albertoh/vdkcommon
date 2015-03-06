@@ -1,17 +1,22 @@
 package cz.incad.vdkcommon;
 
+import cz.incad.vdkcommon.solr.IndexerQuery;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Iterator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
 import javax.sql.DataSource;
+import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.common.SolrDocument;
+import org.apache.solr.common.SolrDocumentList;
 import org.json.JSONObject;
 
 /**
@@ -68,16 +73,16 @@ public class DbUtils {
     public static String getXml(String id) throws SQLException {
         
         try {
-
-            
-            getConnection();
-            String sql = "select sourceXML from ZAZNAM where identifikator=?";
-            PreparedStatement ps = conn.prepareStatement(sql);
-            ps.setString(1, id);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return rs.getString(1);
-            } else {
+            Options opts = Options.getInstance();
+            SolrQuery query = new SolrQuery("id:\"" + id + "\"");
+            query.addField("xml");
+            query.setRows(1);
+            SolrDocumentList docs = IndexerQuery.query(opts.getString("solrIdCore", "vdk_id"), query);
+            Iterator<SolrDocument> iter = docs.iterator();
+            if (iter.hasNext()) {
+                SolrDocument resultDoc = iter.next();
+                return (String) resultDoc.getFieldValue("xml");
+            }else {
                 return "<xml/>";
             }
 

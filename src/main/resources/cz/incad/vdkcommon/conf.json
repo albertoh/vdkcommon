@@ -2,6 +2,7 @@
     "solrHost": "http://localhost:8080/solr",
     "solrCore": "vdk_md5",
     "indexerXSL": "vdk_md5.xsl",
+    "indexerIdXSL": "vdk_id.xsl",
     "facets": ["{!ex=dt}zdroj", 
                 "rokvydani", 
                 "bohemika",

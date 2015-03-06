@@ -7,6 +7,7 @@ package cz.incad.vdkcommon.oai;
 
 import cz.incad.vdkcommon.Interval;
 import cz.incad.vdkcommon.Options;
+import cz.incad.vdkcommon.VDKJobData;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Iterator;
@@ -46,16 +47,63 @@ public class HarvesterJobData {
     private String pathToData;
     private String configFile;
     private String metadataPrefix;
+    private String statusFile;
     
-    private boolean dontIndex;
     private String name;
     private int interval;
     
+    private VDKJobData jdata;
     private boolean interrupted = false;
     
-    public HarvesterJobData(String conf) throws Exception{
-        this.configFile = conf;
-        init();
+//    private HarvesterJobData(String conf) throws Exception{
+//        this.configFile = conf;
+//        init();
+//    }
+    
+    public HarvesterJobData(VDKJobData jdata) throws Exception{
+        this.jdata = jdata;
+        this.configFile = jdata.getConfigFile();
+        
+        
+        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + getConfigFile() + ".json";
+        File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/oai.json"));
+
+        String json = FileUtils.readFileToString(fdef, "UTF-8");
+        opts = new JSONObject(json);
+        File f = new File(path);
+        if (f.exists() && f.canRead()) {
+            json = FileUtils.readFileToString(f, "UTF-8");
+            JSONObject confCustom = new JSONObject(json);
+            Iterator keys = confCustom.keys();
+            while (keys.hasNext()) {
+                String key = (String) keys.next();
+                logger.log(Level.INFO, "key {0} will be overrided", key);
+                opts.put(key, confCustom.get(key));
+            }
+        }
+        
+        this.name = jdata.getString("knihovna");
+        this.homeDir = jdata.getString("homeDir", ".vdkcr") + File.separator;
+        this.statusFile = this.homeDir + jdata.getString("statusFile", this.configFile + ".status");
+        this.saveToDisk = jdata.getBoolean("saveToDisk", true);
+        
+        this.fullIndex = jdata.getBoolean("fullIndex", false);
+        this.onlyHarvest = jdata.getBoolean("onlyHarvest", false);
+        this.startIndex = jdata.getInt("startIndex", -1);
+
+        this.pathToData = jdata.getString("indexDirectory");
+
+        
+        this.sdfoai = new SimpleDateFormat(jdata.getString("oaiDateFormat"));
+        this.sdf = new SimpleDateFormat(jdata.getString("filePathFormat"));
+
+        
+
+        this.metadataPrefix = jdata.getString("metadataPrefix");
+
+        this.interval = Interval.parseString(jdata.getString("interval"));
+       
+        logger.info("HarvesterJobData initialized");
     }
     
     private void init() throws Exception {
@@ -77,9 +125,9 @@ public class HarvesterJobData {
         }
 
         this.name = opts.getString("knihovna");
-        this.setHomeDir(getOpts().optString("homeDir", ".vdkcr") + File.separator);
+        this.homeDir = opts.optString("homeDir", ".vdkcr") + File.separator;
+        this.statusFile = this.homeDir + opts.optString("statusFile", this.configFile + ".status");
         this.setSaveToDisk(getOpts().optBoolean("saveToDisk", true));
-        this.setDontIndex(getOpts().optBoolean("dontIndex", true));
         this.setFullIndex(getOpts().optBoolean("fullIndex", false));
         this.setOnlyHarvest(getOpts().optBoolean("onlyHarvest", false));
         this.setStartIndex(getOpts().optInt("startIndex", -1));
@@ -155,20 +203,6 @@ public class HarvesterJobData {
      */
     public void setResumptionToken(String resumptionToken) {
         this.resumptionToken = resumptionToken;
-    }
-
-    /**
-     * @return the dontIndex
-     */
-    public boolean isDontIndex() {
-        return dontIndex;
-    }
-
-    /**
-     * @param dontIndex the dontIndex to set
-     */
-    public void setDontIndex(boolean dontIndex) {
-        this.dontIndex = dontIndex;
     }
 
     /**
@@ -399,13 +433,27 @@ public class HarvesterJobData {
      * @return the interrupted
      */
     public boolean isInterrupted() {
-        return interrupted;
+        return jdata.isInterrupted();
     }
 
     /**
      * @param interrupted the interrupted to set
      */
     public void setInterrupted(boolean interrupted) {
-        this.interrupted = interrupted;
+        jdata.setInterrupted(interrupted); 
+    }
+
+    /**
+     * @return the statusFile
+     */
+    public String getStatusFile() {
+        return statusFile;
+    }
+
+    /**
+     * @param statusFile the statusFile to set
+     */
+    public void setStatusFile(String statusFile) {
+        this.statusFile = statusFile;
     }
 }

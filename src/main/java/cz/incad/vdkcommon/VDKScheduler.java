@@ -1,14 +1,17 @@
 
 package cz.incad.vdkcommon;
 
-import cz.incad.vdkcommon.oai.HarvesterJob;
-import cz.incad.vdkcommon.oai.HarvesterJobData;
+import cz.incad.vdkcommon.VDKJob;
+import cz.incad.vdkcommon.VDKJobData;
+import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.apache.commons.io.FileUtils;
+import org.json.JSONObject;
 import org.quartz.CronScheduleBuilder;
 import org.quartz.CronTrigger;
 import org.quartz.JobBuilder;
@@ -58,11 +61,11 @@ public class VDKScheduler {
 
         org.quartz.Scheduler sched = VDKScheduler.getInstance().getScheduler();
         Map<String, Object> map = new HashMap<String, Object>();
-        HarvesterJobData jobdata = new HarvesterJobData(conf);
+        VDKJobData jobdata = new VDKJobData(conf, new JSONObject());
         map.put("jobdata", jobdata);
         JobDataMap data = JobDataMapSupport.newJobDataMap(map);
 
-        JobDetail job = JobBuilder.newJob(HarvesterJob.class)
+        JobDetail job = JobBuilder.newJob(VDKJob.class)
                 .withIdentity("job_" + name)
                 .setJobData(data)
                 .build();
@@ -79,6 +82,43 @@ public class VDKScheduler {
             sched.scheduleJob(job, trigger);
             LOGGER.log(Level.INFO, "Cron for {0} scheduled with {1}", new Object[]{name, cronVal});
         }
+    }
+    
+    public static void addIndexerJob() throws SchedulerException, Exception {
+
+        org.quartz.Scheduler sched = VDKScheduler.getInstance().getScheduler();
+        Map<String, Object> map = new HashMap<String, Object>();
+        VDKJobData jobdata = new VDKJobData("indexer", new JSONObject());
+        map.put("jobdata", jobdata);
+        JobDataMap data = JobDataMapSupport.newJobDataMap(map);
+
+        JobDetail job = JobBuilder.newJob(VDKJob.class)
+                .withIdentity("job_index")
+                .setJobData(data)
+                .build();
+        if (sched.checkExists(job.getKey())) {
+            sched.deleteJob(job.getKey());
+        }
+        
+        File statusFile = new File(System.getProperty("user.home") + File.separator + 
+                ".vdkcr" + File.separator + 
+                Options.getInstance().getString("indexerStatus", "indexer.json"));
+
+        if (statusFile.exists()) {
+            JSONObject statusJson = new JSONObject(FileUtils.readFileToString(statusFile, "UTF-8"));
+            String cronVal = statusJson.optString("cron", "");
+        
+            if(cronVal.equals("")){
+                LOGGER.log(Level.INFO, "Cron for index cleared ");
+            }else{
+                CronTrigger trigger = TriggerBuilder.newTrigger()
+                        .withIdentity("trigger_index")
+                        .withSchedule(CronScheduleBuilder.cronSchedule(cronVal))
+                        .build();
+                sched.scheduleJob(job, trigger);
+                LOGGER.log(Level.INFO, "Cron for index scheduled with {0}", cronVal);
+            }
+        } 
     }
     
 }

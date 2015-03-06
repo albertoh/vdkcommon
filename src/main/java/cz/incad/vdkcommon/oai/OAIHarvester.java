@@ -1,11 +1,10 @@
 package cz.incad.vdkcommon.oai;
 
 import cz.incad.vdkcommon.Bohemika;
-import cz.incad.vdkcommon.DbUtils;
 import cz.incad.vdkcommon.xml.XMLReader;
 import cz.incad.vdkcommon.Options;
 import cz.incad.vdkcommon.Slouceni;
-import cz.incad.vdkcommon.db.Zaznam;
+import cz.incad.vdkcommon.VDKJobData;
 import cz.incad.vdkcommon.solr.Indexer;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -19,7 +18,6 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import java.io.*;
 import java.net.URL;
-import java.sql.Connection;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
@@ -37,30 +35,26 @@ import org.json.JSONObject;
  */
 public class OAIHarvester {
 
-    private static final Logger logger = Logger.getLogger(OAIHarvester.class.getName());
+    private Logger logger;
     private JSONObject opts;
     XMLReader xmlReader;
-    Connection conn;
-    
+
     String completeListSize;
     int currentDocsSent = 0;
     int currentIndex = 0;
-    
+
     Transformer xformer;
-    
+
     String configFile;
 
     private final String LAST_HARVEST = "last_harvest";
     JSONObject statusJson;
 
-    //Indexer indexer = new Indexer();
-    
-
-    Zaznam zaznam;
+    Indexer indexer = new Indexer();
 
     public OAIHarvester(String configFile) throws Exception {
         this.configFile = configFile;
-        this.jobData = new HarvesterJobData(configFile);
+        this.jobData = new HarvesterJobData(new VDKJobData(configFile, new JSONObject()));
         init();
     }
 
@@ -70,16 +64,10 @@ public class OAIHarvester {
         init();
     }
 
-    public OAIHarvester(Connection conn, String configFile) throws Exception {
-        this.configFile = configFile;
-        this.conn = conn;
-        this.jobData = new HarvesterJobData(configFile);
-        init();
-    }
-
     HarvesterJobData jobData;
+
     private void init() throws Exception {
-        
+        logger = Logger.getLogger(OAIHarvester.class.getName() + "_" + this.configFile);
         String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + jobData.getConfigFile() + ".json";
         File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/oai.json"));
 
@@ -95,11 +83,9 @@ public class OAIHarvester {
                 logger.log(Level.INFO, "key {0} will be overrided", key);
                 opts.put(key, confCustom.get(key));
             }
-        }else{
+        } else {
             logger.log(Level.INFO, "File {0} is not present, using default configuration", path);
         }
-
-        
 
         try {
             File dir = new File(jobData.getHomeDir() + "logs");
@@ -112,7 +98,7 @@ public class OAIHarvester {
             FileHandler logFile;
             logFile = new FileHandler(jobData.getHomeDir() + "logs" + File.separator + configFile + ".log");
             logFile.setFormatter(new SimpleFormatter());
-            
+
             logger.addHandler(logFile);
 
         } catch (SecurityException ex) {
@@ -120,7 +106,6 @@ public class OAIHarvester {
             throw new Exception(ex);
         }
         xmlReader = new XMLReader();
-        
 
         xformer = TransformerFactory.newInstance().newTransformer();
 
@@ -135,9 +120,20 @@ public class OAIHarvester {
     }
 
     private void getRecordsFromDir(File dir) throws Exception {
+        // check interrupted thread
+        if (jobData.isInterrupted()) {
+
+            logger.log(Level.INFO, "HARVESTER INTERRUPTED");
+            return;
+        }
         File[] children = dir.listFiles();
         Arrays.sort(children);
-        for (File child : children) {
+        for (File child : children) {// check interrupted thread
+            if (jobData.isInterrupted()) {
+
+                logger.log(Level.INFO, "HARVESTER INTERRUPTED");
+                return;
+            }
             if (currentDocsSent >= jobData.getMaxDocuments() && jobData.getMaxDocuments() > 0) {
                 break;
             }
@@ -149,31 +145,28 @@ public class OAIHarvester {
                 xmlReader.loadXmlFromFile(child);
                 NodeList nodes = xmlReader.getListOfNodes("//oai:record");
                 for (int j = 0; j < nodes.getLength(); j++) {
+                    // check interrupted thread
+                    if (jobData.isInterrupted()) {
+
+                        logger.log(Level.INFO, "HARVESTER INTERRUPTED");
+                        return;
+                    }
                     if (currentIndex > jobData.getStartIndex()) {
                         identifier = xmlReader.getNodeValue("//oai:record[position()=" + (j + 1) + "]/oai:header/oai:identifier/text()");
+                        
 
                         processRecord(nodes.item(j), identifier, j + 1);
                     }
                     currentIndex++;
                 }
                 logger.log(Level.INFO, "number: {0}", currentDocsSent);
-
-//                if (!arguments.dontIndex) {
-//                    indexer.processXML(children[i]);
-//                    indexer.commit();
-//                }
             }
         }
     }
 
-    
-
     public int harvest() throws Exception {
 
         try {
-            conn = DbUtils.getConnection();
-
-            zaznam = new Zaznam(conn);
 
             long startTime = (new Date()).getTime();
             currentIndex = 0;
@@ -181,15 +174,15 @@ public class OAIHarvester {
             if (jobData.isFromDisk()) {
                 getRecordsFromDisk();
             } else {
-                File statusFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
-                
+                File statusFile = new File(jobData.getStatusFile());
+
                 if (statusFile.exists()) {
                     statusJson = new JSONObject(FileUtils.readFileToString(statusFile, "UTF-8"));
                 } else {
                     statusJson = new JSONObject();
                     statusJson.put(LAST_HARVEST, getInitialDate());
                 }
-                
+
                 if (jobData.getResumptionToken() != null) {
                     logger.log(Level.INFO, "updating with resumptionToken: {0}", jobData.getResumptionToken());
                     getRecordWithResumptionToken(jobData.getResumptionToken());
@@ -198,15 +191,12 @@ public class OAIHarvester {
                         jobData.setFrom(getInitialDate());
                     } else {
                         jobData.setFrom(statusJson.optString(LAST_HARVEST, getInitialDate()));
-                        
+
                     }
                     logger.log(Level.INFO, "updating from: " + jobData.getFrom());
                     update(jobData.getFrom());
                 }
             }
-
-//            logFile.newLine();
-//            logFile.write("Harvest success " + currentDocsSent + " records");
 
             long timeInMiliseconds = (new Date()).getTime() - startTime;
             logger.log(Level.INFO, "HARVEST SUCCESS {0} records", currentDocsSent);
@@ -215,26 +205,13 @@ public class OAIHarvester {
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
             throw new Exception(ex);
-        } finally {
-//            try {
-//                if (logFile != null) {
-//                    logFile.flush();
-//                    logFile.close();
-//                }
-//                if (errorLogFile != null) {
-//                    errorLogFile.flush();
-//                    errorLogFile.close();
-//                }
-//            } catch (IOException ex) {
-//                logger.log(Level.WARNING, null, ex);
-//            }
-        }
+        } 
         return currentDocsSent;
     }
 
     private void writeStatus(String from) throws FileNotFoundException, IOException {
         statusJson.put(LAST_HARVEST, from);
-        File statusFile = new File(jobData.getHomeDir() + opts.getString("updateTimeFile"));
+        File statusFile = new File(jobData.getStatusFile());
         FileUtils.writeStringToFile(statusFile, statusJson.toString());
     }
 
@@ -311,35 +288,19 @@ public class OAIHarvester {
 
     private String getRecords(String query) throws Exception {
 
-        // check interrupted thread
-        if (Thread.currentThread().isInterrupted()) {
-            logger.log(Level.INFO, "HARVESTER INTERRUPTED");
-            if (conn != null && !conn.isClosed()) {
-                conn.close();
-            }
-            throw new InterruptedException();
-        }
         if (jobData.isInterrupted()) {
             logger.log(Level.INFO, "HARVESTER INTERRUPTED");
-            if (conn != null && !conn.isClosed()) {
-                conn.close();
-            }
-            throw new InterruptedException();
+            return null;
         }
 
         String urlString = opts.getString("baseUrl") + query;
         URL url = new URL(urlString.replace("\n", ""));
-        logger.log(Level.INFO, "reading url: " + url.toString());
-//        logFile.newLine();
-//        logFile.write(url.toString());
-//        logFile.flush();
+        logger.log(Level.INFO, "reading url: {0}", url.toString());
         try {
             xmlReader.readUrl(url.toString());
         } catch (Exception ex) {
             logger.log(Level.WARNING, ex.toString());
-            logger.log(Level.WARNING, "retrying url: " + url.toString());
-//            logFile.newLine();
-//            logFile.write("retrying url: " + url.toString());
+            logger.log(Level.WARNING, "retrying url: {0}", url.toString());
             xmlReader.readUrl(url.toString());
         }
         String error = xmlReader.getNodeValue("//oai:error/@code");
@@ -349,9 +310,10 @@ public class OAIHarvester {
             String identifier;
 
             String fileName = null;
+            String recdate = xmlReader.getNodeValue("//oai:record[position()=1]/oai:header/oai:datestamp/text()");
             if (jobData.isSaveToDisk()) {
                 fileName = writeNodeToFile(xmlReader.getNodeElement(),
-                        xmlReader.getNodeValue("//oai:record[position()=1]/oai:header/oai:datestamp/text()"),
+                        recdate,
                         xmlReader.getNodeValue("//oai:record[position()=1]/oai:header/oai:identifier/text()"));
             }
             NodeList nodes = xmlReader.getListOfNodes("//oai:record");
@@ -362,12 +324,19 @@ public class OAIHarvester {
 
                     for (int i = 0; i < nodes.getLength(); i++) {
                         identifier = xmlReader.getNodeValue("//oai:record[position()=" + (i + 1) + "]/oai:header/oai:identifier/text()");
+                        recdate = xmlReader.getNodeValue("//oai:record[position()=" + (i + 1) + "]/oai:header/oai:datestamp/text()");
+                        
+                        // check interrupted thread
+                        if (jobData.isInterrupted()) {
 
+                            logger.log(Level.INFO, "HARVESTER INTERRUPTED");
+                            return null;
+                        }
                         processRecord(nodes.item(i), identifier, i + 1);
+                        writeStatus(recdate);
                         currentIndex++;
                         logger.log(Level.FINE, "number: {0} of {1}", new Object[]{(currentDocsSent), completeListSize});
                     }
-                    //context.getAplikatorService().processRecords(rc);
                 }
             }
 
@@ -436,14 +405,8 @@ public class OAIHarvester {
 
     public static void main(String[] args) throws Exception {
 
-        Connection conn = null;
         try {
-            org.postgresql.Driver dr;
-            conn = DbUtils.getConnection("org.postgresql.Driver",
-                    "jdbc:postgresql://localhost:5432/vdk",
-                    "vdk",
-                    "vdk");
-            OAIHarvester oh = new OAIHarvester(conn, "nkc_vdk");
+            OAIHarvester oh = new OAIHarvester("nkc_vdk");
             //oh.setSaveToDisk(true);
 //            oh.setFromDisk(true);
 //            oh.setPathToData("/home/alberto/.vdkcr/OAI/harvest/NKC/2014/08/28/09/20/45");
@@ -458,12 +421,8 @@ public class OAIHarvester {
             //oh.harvest("-cfgFile nkp_vdk -dontIndex -saveToDisk -onlyHarvest ", null, null);
             //oh.harvest("-cfgFile nkp_vdk -dontIndex -saveToDisk -onlyHarvest -jobData.getResumptionToken() 201305160612203201305162300009NKC-VDK:NKC-VDKM", null, null);
         } catch (Exception ex) {
-            logger.log(Level.SEVERE, null, ex);
-        } finally {
-            if (conn != null && !conn.isClosed()) {
-                conn.close();
-            }
-        }
+            System.out.println(ex);
+        } 
 
     }
 
@@ -474,21 +433,12 @@ public class OAIHarvester {
      * @param index the index of the node in the xml file
      */
     private void processRecord(Node node, String identifier, int index) throws InterruptedException, Exception {
-            logger.log(Level.INFO, "Processing record {0} ...", identifier);
-        // check interrupted thread
-        if (Thread.currentThread().isInterrupted() ) {
-
-            logger.log(Level.INFO, "HARVESTER INTERRUPTED");
-            throw new InterruptedException();
-        }
+        logger.log(Level.INFO, "Processing record {0} ...", identifier);
         if (node != null) {
-            zaznam.clearParams();
 
-//            JSONObject json = org.json.XML.toJSONObject(nodeToString(node));
-//            logger.log(Level.INFO, "JSON for identifier {0} is: ", json);
             String error = xmlReader.getNodeValue(node, "/oai:error/@code");
             if (error == null || error.equals("")) {
-                
+
                 String urlZdroje = opts.getString("baseUrl")
                         + "?verb=GetRecord&identifier=" + identifier
                         + "&metadataPrefix=" + jobData.getMetadataPrefix()
@@ -500,11 +450,10 @@ public class OAIHarvester {
                         return;
                     }
                     //zpracovat deletes
-                    zaznam.remove(identifier);
+                    indexer.removeDoc(identifier);
                 } else {
 //                    String xmlStr = nodeToString(xmlReader.getNodeElement(), index);
                     String xmlStr = nodeToString(node);
-//                    System.out.println(xmlStr);
 
                     String hlavninazev = xmlReader.getNodeValue(node, "./oai:metadata/marc:record/marc:datafield[@tag='245']/marc:subfield[@code='a']/text()");
 
@@ -512,121 +461,27 @@ public class OAIHarvester {
 
                     JSONObject slouceni = Slouceni.fromXml(xmlStr);
 
-                    zaznam.knihovna = opts.getString("knihovna");
-                    zaznam.identifikator = identifier;
-                    zaznam.uniqueCode = slouceni.getString("docCode");
-                    zaznam.codeType = slouceni.getString("codeType");
-                    zaznam.urlZdroje = urlZdroje;
-                    zaznam.hlavniNazev = hlavninazev;
-                    zaznam.bohemika = Bohemika.isBohemika(xmlStr);
-
-                    String typDokumentu = "";
-                    String leader = xmlReader.getNodeValue(node, "./oai:metadata/marc:record/marc:leader/text()");
-                    if (leader != null && leader.length() > 9) {
-                        typDokumentu = typDokumentu(leader);
-                    }
-                    zaznam.typDokumentu = typDokumentu;
-                    zaznam.sourceXML = xmlStr;
+                    
 
                     try {
-                        zaznam.store();
+                        indexer.store(identifier, 
+                                slouceni.getString("docCode"), 
+                                slouceni.getString("codeType"), 
+                                Bohemika.isBohemika(xmlStr), 
+                                xmlStr);
                         currentDocsSent++;
                     } catch (Exception ex) {
                         if (jobData.isContinueOnDocError()) {
-//                            errorLogFile.newLine();
-//                            errorLogFile.write("Error writing docs to db. Id: " + identifier);
-//                            errorLogFile.flush();
                             logger.log(Level.WARNING, "Error writing doc to db. Id: {0}", identifier);
                         } else {
                             throw new Exception(ex);
                         }
                     }
 
-                    //try {
-//                    if (!jobData.isDontIndex()) {
-//                        indexer.reindexDoc(zaznam.uniqueCode);
-//                    }
-
                 }
             } else {
                 logger.log(Level.SEVERE, "Can't proccess xml {0}", error);
             }
-        }
-    }
-    private String typDokumentu(String leader) {
-        if (leader != null && leader.length() > 9) {
-            String code = leader.substring(6, 8);
-            if ("aa".equals(code)
-                    || "ac".equals(code)
-                    || "ad".equals(code)
-                    || "am".equals(code)
-                    || code.startsWith("t")) {
-                return "BK";
-            } else if ("bi".equals(code)
-                    || "bs".equals(code)) {
-                return "SE";
-            } else if (code.startsWith("p")) {
-                return "MM";
-            } else if (code.startsWith("e")) {
-                return "MP";
-            } else if (code.startsWith("f")) {
-                return "MP";
-            } else if (code.startsWith("g")) {
-                return "VM";
-            } else if (code.startsWith("k")) {
-                return "VM";
-            } else if (code.startsWith("o")) {
-                return "VM";
-            } else if (code.startsWith("c")) {
-                return "MU";
-            } else if (code.startsWith("d")) {
-                return "MU";
-            } else if (code.startsWith("i")) {
-                return "MU";
-            } else if (code.startsWith("j")) {
-                return "MU";
-            } else {
-                return code;
-            }
-        } else {
-            return "none";
-        }
-    }
-
-    private static class ZaznamData {
-
-        private String uniqueCode;
-        private int id;
-
-        public ZaznamData() {
-        }
-
-        /**
-         * @return the uniqueCode
-         */
-        public String getUniqueCode() {
-            return uniqueCode;
-        }
-
-        /**
-         * @param uniqueCode the uniqueCode to set
-         */
-        public void setUniqueCode(String uniqueCode) {
-            this.uniqueCode = uniqueCode;
-        }
-
-        /**
-         * @return the id
-         */
-        public int getId() {
-            return id;
-        }
-
-        /**
-         * @param id the id to set
-         */
-        public void setId(int id) {
-            this.id = id;
         }
     }
 }

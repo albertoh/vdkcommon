@@ -5,21 +5,18 @@
  */
 package cz.incad.vdkcommon.solr;
 
-import cz.incad.vdkcommon.DbUtils;
 import cz.incad.vdkcommon.Options;
 import cz.incad.vdkcommon.SolrIndexerCommiter;
-import cz.incad.vdkcommon.db.Zaznam;
+import cz.incad.vdkcommon.VDKJobData;
+import cz.incad.vdkcommon.oai.HarvesterJobData;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.logging.Level;
@@ -31,8 +28,6 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import org.apache.commons.io.FileUtils;
 import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 import org.json.JSONObject;
@@ -52,17 +47,42 @@ public class Indexer {
     JSONObject statusJson;
 
     private final Options opts;
+    private final VDKJobData jobData;
+    String configFile;
     Transformer transformer;
     Transformer trId;
 
+    
+
     public Indexer() throws Exception {
+        this.jobData = null;
+        this.configFile = null;
         opts = Options.getInstance();
+        init();
+    }
+    
+    public Indexer(VDKJobData jobData) throws Exception {
+        this.jobData = jobData;
+        this.configFile = jobData.getConfigFile();
+        opts = Options.getInstance();
+        init();
+    }
+    
+    public Indexer(String configFile) throws Exception {
+        this.configFile = configFile;
+        this.jobData = new VDKJobData(configFile, new JSONObject());
+        opts = Options.getInstance();
+        init();
+
+    }
+    
+    private  void init() throws Exception{
         TransformerFactory tfactory = TransformerFactory.newInstance();
         StreamSource xslt = new StreamSource(new File(opts.getString("indexerXSL", "vdk_md5.xsl")));
         transformer = tfactory.newTransformer(xslt);
         StreamSource xslt2 = new StreamSource(new File(opts.getString("indexerIdXSL", "vdk_id.xsl")));
         trId = tfactory.newTransformer(xslt2);
-
+        readStatus();
     }
 
     public void clean() throws Exception {
@@ -101,7 +121,10 @@ public class Indexer {
             SolrDocumentList docs = IndexerQuery.query(opts.getString("solrIdCore", "vdk_id"), query);
             Iterator<SolrDocument> iter = docs.iterator();
             while (iter.hasNext()) {
-
+                if (jobData.isInterrupted()) {
+                    logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                    break;
+                }
                 SolrDocument resultDoc = iter.next();
 
                 boolean bohemika = false;
@@ -127,42 +150,6 @@ public class Indexer {
         }
     }
 
-    public void indexDocFromDb(Connection conn, String uniqueCode) throws Exception {
-
-        try {
-            logger.log(Level.INFO, "Indexace doc {0}...", uniqueCode);
-            String sql = "select zaznam_id, identifikator, codeType, sourceXML, bohemika from zaznam where uniqueCode=?";
-            PreparedStatement ps = conn.prepareStatement(sql);
-            ps.setString(1, uniqueCode);
-            ResultSet rs = ps.executeQuery();
-            StringBuilder sb = new StringBuilder();
-            sb.append("<add>");
-            while (rs.next()) {
-
-                sb.append(transformXML(rs.getString("sourceXML"),
-                        uniqueCode,
-                        rs.getString("codeType"),
-                        rs.getString("identifikator"),
-                        rs.getBoolean("bohemika")));
-                if (total % 1000 == 0) {
-                    sb.append("</add>");
-                    SolrIndexerCommiter.postData(sb.toString());
-                    SolrIndexerCommiter.postData("<commit/>");
-                    sb = new StringBuilder();
-                    sb.append("<add>");
-                    logger.log(Level.INFO, "Current indexed docs: {0}", total);
-                }
-
-                total++;
-
-            }
-            SolrIndexerCommiter.postData("<commit/>");
-            logger.log(Level.INFO, "REINDEX FINISHED. Total docs: {0}", total);
-        } catch (Exception ex) {
-            logger.log(Level.SEVERE, "Error in reindex", ex);
-        }
-    }
-
     
     public void removeDoc(String identifier) throws Exception {
         String url = String.format("%s/%s/update",
@@ -171,18 +158,18 @@ public class Indexer {
         SolrIndexerCommiter.postData("<delete><id>"+identifier+"</id></delete>");
         SolrIndexerCommiter.postData("<commit/>");
     }
-    public void store(Zaznam z) throws Exception {
+    public void store(String id, String code, String codeType, boolean bohemika, String xml) throws Exception {
 
         StringBuilder sb = new StringBuilder();
         try {
-            logger.log(Level.INFO, "Indexace zaznamu...");
+            logger.log(Level.INFO, "Storing document...");
             sb.append("<add>");
 
-            sb.append(doSorlXML(z.sourceXML,
-                    z.uniqueCode,
-                    z.codeType,
-                    z.identifikator,
-                    z.bohemika));
+            sb.append(doSorlXML(xml,
+                    code,
+                    codeType,
+                    id,
+                    bohemika));
             sb.append("</add>");
             String url = String.format("%s/%s/update",
                     opts.getString("solrHost", "http://localhost:8080/solr"),
@@ -190,44 +177,55 @@ public class Indexer {
             SolrIndexerCommiter.postData(url, sb.toString());
             if (total % 1000 == 0) {
                 SolrIndexerCommiter.postData(url, "<commit/>");
-                logger.log(Level.INFO, "Current indexed docs: {0}", total);
+                logger.log(Level.INFO, "Current stored docs: {0}", total);
             }
 
             total++;
         } catch (Exception ex) {
-            logger.log(Level.SEVERE, "Error indexing zaznam with " + sb.toString(), ex);
+            logger.log(Level.SEVERE, "Error storing doc with " + sb.toString(), ex);
         }
     }
     
-    public void index() throws Exception{
+    private void index() throws Exception{
         update(null);
         writeStatus();
     }
     
     public void update() throws Exception{
-        File statusFile = new File(opts.getString("homeDir", ".vdkcr") + File.separator + opts.getString("updateTimeFile"));
-                
+        
+            
+
+            if(statusJson.has(LAST_UPDATE)){
+                update("timestamp:[" + statusJson.getString(LAST_UPDATE) + " TO NOW]");
+            }else{
+                update(null);
+            }
+        
+            writeStatus();
+        
+    }
+    
+    private void readStatus() throws IOException{
+        File statusFile = new File(System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + opts.getString("indexerStatus", "indexer.json"));
+
         if (statusFile.exists()) {
             statusJson = new JSONObject(FileUtils.readFileToString(statusFile, "UTF-8"));
         } else {
             statusJson = new JSONObject();
-            
         }
         
-        if(statusJson.has(LAST_UPDATE)){
-            update("timestamp:"+statusJson.getString(LAST_UPDATE));
-        }
-        
-        writeStatus();
     }
     
     private void writeStatus() throws FileNotFoundException, IOException {
         Date date = new Date();
-        SimpleDateFormat sdf = new SimpleDateFormat(opts.getString("oaiDateFormat"));
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
         String to = sdf.format(date);
         statusJson.put(LAST_UPDATE, to);
-        File statusFile = new File(opts.getString("homeDir", ".vdkcr") + File.separator + opts.getString("updateTimeFile"));
+        File statusFile = new File(System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + opts.getString("indexerStatus", "indexer.json"));
         FileUtils.writeStringToFile(statusFile, statusJson.toString());
+        logger.log(Level.INFO, "writing to file {0}, \n\t{1}, \n\t{2}", new Object[]{statusFile.getAbsolutePath(),
+                        to, statusJson.toString()});
+
     }
 
     private void update(String fq) throws Exception {
@@ -336,7 +334,7 @@ public class Indexer {
 //                    "jdbc:postgresql://localhost:5432/vdk",
 //                    "vdk",
 //                    "vdk");
-            Indexer indexer = new Indexer();
+            Indexer indexer = new Indexer("vkol");
             indexer.reindex();
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
