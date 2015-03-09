@@ -38,22 +38,22 @@ import org.w3c.dom.Document;
  * @author alberto
  */
 public class Indexer {
-
+    
     static final Logger logger = Logger.getLogger(Indexer.class.getName());
-
+    
     int total = 0;
     
-    private final String LAST_UPDATE = "last_index_update";
+    private final String LAST_UPDATE = "last_run";
+    private final String LAST_MESSAGE = "last_message";
+    private String statusFileName;
     JSONObject statusJson;
-
+    
     private final Options opts;
     private final VDKJobData jobData;
     String configFile;
     Transformer transformer;
     Transformer trId;
-
     
-
     public Indexer() throws Exception {
         this.jobData = null;
         this.configFile = null;
@@ -73,18 +73,26 @@ public class Indexer {
         this.jobData = new VDKJobData(configFile, new JSONObject());
         opts = Options.getInstance();
         init();
-
+        
     }
     
-    private  void init() throws Exception{
+    private void init() throws Exception {
         TransformerFactory tfactory = TransformerFactory.newInstance();
         StreamSource xslt = new StreamSource(new File(opts.getString("indexerXSL", "vdk_md5.xsl")));
         transformer = tfactory.newTransformer(xslt);
         StreamSource xslt2 = new StreamSource(new File(opts.getString("indexerIdXSL", "vdk_id.xsl")));
         trId = tfactory.newTransformer(xslt2);
+        if(this.jobData != null){
+            statusFileName = System.getProperty("user.home") + 
+                File.separator + ".vdkcr" + File.separator + 
+                File.separator + "jobs" + File.separator + 
+                File.separator + "status" + File.separator + "indexer.status";
+        }else{
+            statusFileName = jobData.getStatusFile();
+        }
         readStatus();
     }
-
+    
     public void clean() throws Exception {
         logger.log(Level.INFO, "Cleaning index...");
         String s = "<delete><query>*:*</query></delete>";
@@ -92,29 +100,29 @@ public class Indexer {
         SolrIndexerCommiter.postData("<commit/>");
         logger.log(Level.INFO, "Index cleaned");
     }
-
+    
     public void reindex() throws Exception {
         clean();
         index();
     }
-
+    
     public void reindexDoc(String uniqueCode) throws Exception {
-
+        
         logger.log(Level.INFO, "Cleaning doc {0} from index...", uniqueCode);
         String s = "<delete><query>code:" + uniqueCode + "</query></delete>";
         SolrIndexerCommiter.postData(s);
         SolrIndexerCommiter.postData("<commit/>");
-
+        
         indexDoc(uniqueCode);
     }
-
+    
     public void indexDoc(String uniqueCode) throws Exception {
-
+        
         try {
             logger.log(Level.INFO, "Indexace doc {0}...", uniqueCode);
             StringBuilder sb = new StringBuilder();
             sb.append("<add>");
-
+            
             SolrQuery query = new SolrQuery("code:\"" + uniqueCode + "\"");
             query.addField("id,code,code_type,xml");
             query.setRows(1000);
@@ -126,20 +134,20 @@ public class Indexer {
                     break;
                 }
                 SolrDocument resultDoc = iter.next();
-
+                
                 boolean bohemika = false;
                 if (resultDoc.getFieldValue("bohemika") != null) {
                     bohemika = (Boolean) resultDoc.getFieldValue("bohemika");
                 }
-
+                
                 sb.append(transformXML((String) resultDoc.getFieldValue("xml"),
                         uniqueCode,
                         (String) resultDoc.getFieldValue("code_type"),
                         (String) resultDoc.getFieldValue("id"),
                         bohemika));
-
+                
                 total++;
-
+                
             }
             sb.append("</add>");
             SolrIndexerCommiter.postData(sb.toString());
@@ -149,22 +157,22 @@ public class Indexer {
             logger.log(Level.SEVERE, "Error in reindex", ex);
         }
     }
-
     
     public void removeDoc(String identifier) throws Exception {
         String url = String.format("%s/%s/update",
                 opts.getString("solrHost", "http://localhost:8080/solr"),
                 opts.getString("solrIdCore", "vdk_id"));
-        SolrIndexerCommiter.postData("<delete><id>"+identifier+"</id></delete>");
+        SolrIndexerCommiter.postData("<delete><id>" + identifier + "</id></delete>");
         SolrIndexerCommiter.postData("<commit/>");
     }
-    public void store(String id, String code, String codeType, boolean bohemika, String xml) throws Exception {
 
+    public void store(String id, String code, String codeType, boolean bohemika, String xml) throws Exception {
+        
         StringBuilder sb = new StringBuilder();
         try {
             logger.log(Level.INFO, "Storing document...");
             sb.append("<add>");
-
+            
             sb.append(doSorlXML(xml,
                     code,
                     codeType,
@@ -179,35 +187,41 @@ public class Indexer {
                 SolrIndexerCommiter.postData(url, "<commit/>");
                 logger.log(Level.INFO, "Current stored docs: {0}", total);
             }
-
+            
             total++;
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Error storing doc with " + sb.toString(), ex);
         }
     }
     
-    private void index() throws Exception{
+    private void index() throws Exception {
         update(null);
+        Date date = new Date();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        String to = sdf.format(date);
+        
+        statusJson.put(LAST_UPDATE, to);
         writeStatus();
     }
     
-    public void update() throws Exception{
+    public void update() throws Exception {
         
-            
-
-            if(statusJson.has(LAST_UPDATE)){
-                update("timestamp:[" + statusJson.getString(LAST_UPDATE) + " TO NOW]");
-            }else{
-                update(null);
-            }
-        
-            writeStatus();
+        if (statusJson.has(LAST_UPDATE)) {
+            update("timestamp:[" + statusJson.getString(LAST_UPDATE) + "%20TO%20NOW]");
+        } else {
+            update(null);
+        }
+//        Date date = new Date();
+//        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+//        String to = sdf.format(date);
+//        
+//        statusJson.put(LAST_UPDATE, to);
+//        writeStatus();
         
     }
     
-    private void readStatus() throws IOException{
-        File statusFile = new File(System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + opts.getString("indexerStatus", "indexer.json"));
-
+    private void readStatus() throws IOException {
+        File statusFile = new File(statusFileName);
         if (statusFile.exists()) {
             statusJson = new JSONObject(FileUtils.readFileToString(statusFile, "UTF-8"));
         } else {
@@ -217,43 +231,41 @@ public class Indexer {
     }
     
     private void writeStatus() throws FileNotFoundException, IOException {
-        Date date = new Date();
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        String to = sdf.format(date);
-        statusJson.put(LAST_UPDATE, to);
-        File statusFile = new File(System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + opts.getString("indexerStatus", "indexer.json"));
+        File statusFile = new File(statusFileName);
         FileUtils.writeStringToFile(statusFile, statusJson.toString());
-        logger.log(Level.INFO, "writing to file {0}, \n\t{1}, \n\t{2}", new Object[]{statusFile.getAbsolutePath(),
-                        to, statusJson.toString()});
-
+        
     }
-
+    
     private void update(String fq) throws Exception {
-
+        
         try {
             StorageBrowser docs = new StorageBrowser();
             docs.setWt("json");
-            docs.setFl("id,code,code_type,bohemika,xml");
-            if(fq != null){
+            docs.setFl("id,code,code_type,bohemika,xml,timestamp");
+            if (fq != null) {
                 docs.setStart(fq);
             }
             Iterator it = docs.iterator();
             StringBuilder sb = new StringBuilder();
             sb.append("<add>");
             while (it.hasNext()) {
+                if (jobData.isInterrupted()) {
+                    logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                    break;
+                }
                 JSONObject doc = (JSONObject) it.next();
                 
                 boolean bohemika = false;
                 if (doc.has("bohemika")) {
                     bohemika = (Boolean) doc.getBoolean("bohemika");
                 }
-
-                sb.append(transformXML((String) doc.optString("xml",""),
+                
+                sb.append(transformXML((String) doc.optString("xml", ""),
                         doc.getString("code"),
                         (String) doc.getString("code_type"),
                         (String) doc.getString("id"),
                         bohemika));
-                
+                statusJson.put(LAST_UPDATE, doc.getString("timestamp"));
                 if (total % 1000 == 0) {
                     sb.append("</add>");
                     SolrIndexerCommiter.postData(sb.toString());
@@ -261,20 +273,24 @@ public class Indexer {
                     sb = new StringBuilder();
                     sb.append("<add>");
                     logger.log(Level.INFO, "Current indexed docs: {0}", total);
+                    statusJson.put(LAST_MESSAGE, "Current indexed docs: " + total);
+                    writeStatus();
                 }
-
+                
                 total++;
             }
             sb.append("</add>");
             SolrIndexerCommiter.postData(sb.toString());
-
+            
             SolrIndexerCommiter.postData("<commit/>");
             logger.log(Level.INFO, "REINDEX FINISHED. Total docs: {0}", total);
+            statusJson.put(LAST_MESSAGE, "INDEX FINISHED. Total docs: " + total);
+            writeStatus();
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Error in reindex", ex);
         }
     }
-
+    
     public void processXML(File file) throws Exception {
         logger.log(Level.FINE, "Sending {0} to index ...", file.getAbsolutePath());
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -282,7 +298,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         SolrIndexerCommiter.postData(sw.toString());
     }
-
+    
     public void processXML(Document doc) throws Exception {
         logger.log(Level.FINE, "Sending to index ...");
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -290,7 +306,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         SolrIndexerCommiter.postData(sw.toString());
     }
-
+    
     private String doSorlXML(String xml, String uniqueCode, String codeType, String identifier, boolean bohemika) throws Exception {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -302,7 +318,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         return sw.toString();
     }
-
+    
     private String transformXML(String xml, String uniqueCode, String codeType, String identifier, boolean bohemika) throws Exception {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -314,7 +330,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         return sw.toString();
     }
-
+    
     public void processXML(String xml, String uniqueCode, String codeType, String identifier, boolean bohemika) throws Exception {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -325,7 +341,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         SolrIndexerCommiter.postData(sw.toString());
     }
-
+    
     public static void main(String[] args) throws SQLException {
         Connection conn = null;
         try {
@@ -340,5 +356,5 @@ public class Indexer {
             logger.log(Level.SEVERE, null, ex);
         }
     }
-
+    
 }

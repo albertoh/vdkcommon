@@ -23,6 +23,9 @@ public class VDKJobData {
     private JSONObject opts;
     
     private String configFile;
+    private String configDir;
+    private String configSimpleName;
+    private String statusFile;
     
     private boolean interrupted = false;
     private final JSONObject runtimeOptions;
@@ -38,8 +41,11 @@ public class VDKJobData {
         String json = FileUtils.readFileToString(fdef, "UTF-8");
         opts = new JSONObject(json);
         
-        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + this.configFile + ".json";
-        File f = new File(path);
+        
+        File f = new File(this.configFile);
+        this.configDir = f.getParent();
+        this.configSimpleName = f.getName().split("\\.")[0];
+        this.statusFile = this.configDir + File.separator + "status" + File.separator + this.configSimpleName + ".status";
         if (f.exists() && f.canRead()) {
             json = FileUtils.readFileToString(f, "UTF-8");
             JSONObject confCustom = new JSONObject(json);
@@ -99,6 +105,27 @@ public class VDKJobData {
     /**
      * @return the configFile
      */
+    public String getStatusFile() {
+        return statusFile;
+    }
+
+    /**
+     * @return the configSimpleName
+     */
+    public String getConfigSimpleName() {
+        return this.configSimpleName;
+    }
+
+    /**
+     * @return the configDir
+     */
+    public String getConfigDir() {
+        return configDir;
+    }
+
+    /**
+     * @return the configFile
+     */
     public String getConfigFile() {
         return configFile;
     }
@@ -136,6 +163,10 @@ public class VDKJobData {
      */
     public void setName(String name) {
         this.name = name;
+    }
+    
+    public String getType(){
+        return opts.getString("type");
     }
 
 

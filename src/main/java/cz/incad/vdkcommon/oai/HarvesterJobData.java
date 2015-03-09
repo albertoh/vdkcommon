@@ -31,6 +31,7 @@ public class HarvesterJobData {
     
     private JSONObject opts;
     private String homeDir;
+    private String oaiDir;
     
 
     private boolean saveToDisk = false;
@@ -52,39 +53,35 @@ public class HarvesterJobData {
     private String name;
     private int interval;
     
-    private VDKJobData jdata;
-    private boolean interrupted = false;
-    
-//    private HarvesterJobData(String conf) throws Exception{
-//        this.configFile = conf;
-//        init();
-//    }
+    private final VDKJobData jdata;
     
     public HarvesterJobData(VDKJobData jdata) throws Exception{
         this.jdata = jdata;
         this.configFile = jdata.getConfigFile();
         
         
-        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + getConfigFile() + ".json";
+        this.homeDir = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator;
+        
+        //String path = this.homeDir + this.configFile + ".json";
         File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/oai.json"));
 
         String json = FileUtils.readFileToString(fdef, "UTF-8");
         opts = new JSONObject(json);
-        File f = new File(path);
-        if (f.exists() && f.canRead()) {
-            json = FileUtils.readFileToString(f, "UTF-8");
-            JSONObject confCustom = new JSONObject(json);
-            Iterator keys = confCustom.keys();
-            while (keys.hasNext()) {
-                String key = (String) keys.next();
-                logger.log(Level.INFO, "key {0} will be overrided", key);
-                opts.put(key, confCustom.get(key));
-            }
-        }
+//        File f = new File(this.configFile);
+//        if (f.exists() && f.canRead()) {
+//            json = FileUtils.readFileToString(f, "UTF-8");
+//            JSONObject confCustom = new JSONObject(json);
+//            Iterator keys = confCustom.keys();
+//            while (keys.hasNext()) {
+//                String key = (String) keys.next();
+//                logger.log(Level.INFO, "key {0} will be overrided", key);
+//                opts.put(key, confCustom.get(key));
+//            }
+//        }
         
         this.name = jdata.getString("knihovna");
-        this.homeDir = jdata.getString("homeDir", ".vdkcr") + File.separator;
-        this.statusFile = this.homeDir + jdata.getString("statusFile", this.configFile + ".status");
+        this.oaiDir = jdata.getString("oaiDir", ".vdkcr") + File.separator;
+        this.statusFile = jdata.getStatusFile();
         this.saveToDisk = jdata.getBoolean("saveToDisk", true);
         
         this.fullIndex = jdata.getBoolean("fullIndex", false);
@@ -104,49 +101,6 @@ public class HarvesterJobData {
         this.interval = Interval.parseString(jdata.getString("interval"));
        
         logger.info("HarvesterJobData initialized");
-    }
-    
-    private void init() throws Exception {
-        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + getConfigFile() + ".json";
-        File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/oai.json"));
-
-        String json = FileUtils.readFileToString(fdef, "UTF-8");
-        opts = new JSONObject(json);
-        File f = new File(path);
-        if (f.exists() && f.canRead()) {
-            json = FileUtils.readFileToString(f, "UTF-8");
-            JSONObject confCustom = new JSONObject(json);
-            Iterator keys = confCustom.keys();
-            while (keys.hasNext()) {
-                String key = (String) keys.next();
-                logger.log(Level.INFO, "key {0} will be overrided", key);
-                opts.put(key, confCustom.get(key));
-            }
-        }
-
-        this.name = opts.getString("knihovna");
-        this.homeDir = opts.optString("homeDir", ".vdkcr") + File.separator;
-        this.statusFile = this.homeDir + opts.optString("statusFile", this.configFile + ".status");
-        this.setSaveToDisk(getOpts().optBoolean("saveToDisk", true));
-        this.setFullIndex(getOpts().optBoolean("fullIndex", false));
-        this.setOnlyHarvest(getOpts().optBoolean("onlyHarvest", false));
-        this.setStartIndex(getOpts().optInt("startIndex", -1));
-
-        this.setPathToData(getOpts().getString("indexDirectory"));
-
-        
-        this.sdfoai = new SimpleDateFormat(opts.getString("oaiDateFormat"));
-        this.sdf = new SimpleDateFormat(opts.getString("filePathFormat"));
-
-        
-
-        this.setMetadataPrefix(getOpts().getString("metadataPrefix"));
-
-        setInterval(Interval.parseString(getOpts().getString("interval")));
-        
-
-        logger.info("HarvesterJobData initialized");
-
     }
 
     /**
@@ -455,5 +409,9 @@ public class HarvesterJobData {
      */
     public void setStatusFile(String statusFile) {
         this.statusFile = statusFile;
+    }
+
+    public VDKJobData getVDKJobData() {
+        return jdata;
     }
 }

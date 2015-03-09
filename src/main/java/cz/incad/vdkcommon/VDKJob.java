@@ -51,13 +51,11 @@ public class VDKJob implements InterruptableJob {
             jobdata.load();
             jobdata.setInterrupted(false);
 
-            if(jobdata.isHarvest()){
+            if(jobdata.getType().equalsIgnoreCase("harvest")){
                 OAIHarvester oh = new OAIHarvester(new HarvesterJobData(jobdata));
                 oh.harvest();
-            }
-            
-            if(!jobdata.isInterrupted() && !jobdata.isIndex()){
-                Indexer indexer =  new Indexer();
+            }else if(jobdata.getType().equalsIgnoreCase("index")){
+                Indexer indexer =  new Indexer(jobdata);
                 indexer.update();
             }
 

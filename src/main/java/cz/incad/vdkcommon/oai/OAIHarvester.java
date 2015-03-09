@@ -47,10 +47,13 @@ public class OAIHarvester {
 
     String configFile;
 
-    private final String LAST_HARVEST = "last_harvest";
+    private final String LAST_HARVEST = "last_run";
+    private final String LAST_MESSAGE = "last_message";
     JSONObject statusJson;
 
-    Indexer indexer = new Indexer();
+    Indexer indexer;
+    HarvesterJobData jobData;
+    FileHandler logFile;
 
     public OAIHarvester(String configFile) throws Exception {
         this.configFile = configFile;
@@ -64,16 +67,16 @@ public class OAIHarvester {
         init();
     }
 
-    HarvesterJobData jobData;
 
     private void init() throws Exception {
         logger = Logger.getLogger(OAIHarvester.class.getName() + "_" + this.configFile);
-        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + jobData.getConfigFile() + ".json";
+        
         File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/oai.json"));
 
+        indexer = new Indexer(this.jobData.getVDKJobData());
         String json = FileUtils.readFileToString(fdef, "UTF-8");
         opts = new JSONObject(json);
-        File f = new File(path);
+        File f = new File(jobData.getConfigFile());
         if (f.exists() && f.canRead()) {
             json = FileUtils.readFileToString(f, "UTF-8");
             JSONObject confCustom = new JSONObject(json);
@@ -84,7 +87,7 @@ public class OAIHarvester {
                 opts.put(key, confCustom.get(key));
             }
         } else {
-            logger.log(Level.INFO, "File {0} is not present, using default configuration", path);
+            logger.log(Level.INFO, "File {0} is not present, using default configuration", jobData.getConfigFile());
         }
 
         try {
@@ -95,11 +98,6 @@ public class OAIHarvester {
                     logger.log(Level.WARNING, "Can''t create logs directory");
                 }
             }
-            FileHandler logFile;
-            logFile = new FileHandler(jobData.getHomeDir() + "logs" + File.separator + configFile + ".log");
-            logFile.setFormatter(new SimpleFormatter());
-
-            logger.addHandler(logFile);
 
         } catch (SecurityException ex) {
             logger.log(Level.SEVERE, null, ex);
@@ -167,6 +165,12 @@ public class OAIHarvester {
     public int harvest() throws Exception {
 
         try {
+            
+            
+            logFile = new FileHandler(jobData.getHomeDir() + "logs" + File.separator + jobData.getVDKJobData().getConfigSimpleName() + ".log");
+            logFile.setFormatter(new SimpleFormatter());
+
+            logger.addHandler(logFile);
 
             long startTime = (new Date()).getTime();
             currentIndex = 0;
@@ -205,7 +209,10 @@ public class OAIHarvester {
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
             throw new Exception(ex);
-        } 
+        } finally{
+            logFile.close();
+            logger.removeHandler(logFile);
+        }
         return currentDocsSent;
     }
 
@@ -236,14 +243,18 @@ public class OAIHarvester {
         Date current = c_to.getTime();
 
         while (current.before(final_date)) {
+            if (jobData.isInterrupted()) {
+                break;
+            }
             update(jobData.getSdfoai().format(c_from.getTime()), jobData.getSdfoai().format(current));
             c_to.add(jobData.getInterval(), 1);
             c_from.add(jobData.getInterval(), 1);
             current = c_to.getTime();
         }
-        update(jobData.getSdfoai().format(c_from.getTime()), jobData.getSdfoai().format(final_date));
-
-        writeStatus(to);
+        if (!jobData.isInterrupted()) {
+            update(jobData.getSdfoai().format(c_from.getTime()), jobData.getSdfoai().format(final_date));
+            writeStatus(to);
+        }
 
     }
 
@@ -252,7 +263,6 @@ public class OAIHarvester {
         //responseDate = from;
         writeStatus(from);
         getRecords(from, until);
-        writeStatus(until);
     }
 
     private void getRecordWithResumptionToken(String resumptionToken) throws Exception {
@@ -315,6 +325,7 @@ public class OAIHarvester {
                 fileName = writeNodeToFile(xmlReader.getNodeElement(),
                         recdate,
                         xmlReader.getNodeValue("//oai:record[position()=1]/oai:header/oai:identifier/text()"));
+                        writeStatus(recdate);
             }
             NodeList nodes = xmlReader.getListOfNodes("//oai:record");
             if (jobData.isOnlyIdentifiers()) {
@@ -330,11 +341,13 @@ public class OAIHarvester {
                         if (jobData.isInterrupted()) {
 
                             logger.log(Level.INFO, "HARVESTER INTERRUPTED");
+                            statusJson.put(LAST_MESSAGE, "Harvester interrupted by user");
                             return null;
                         }
                         processRecord(nodes.item(i), identifier, i + 1);
-                        writeStatus(recdate);
                         currentIndex++;
+                        statusJson.put(LAST_MESSAGE, "Harvested " + currentIndex + " records");
+                        writeStatus(recdate);
                         logger.log(Level.FINE, "number: {0} of {1}", new Object[]{(currentDocsSent), completeListSize});
                     }
                 }

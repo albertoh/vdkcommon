@@ -123,7 +123,8 @@ public class StorageBrowser implements Iterable<Object> {
             try {
                 getDocs("*");
             } catch (Exception ex) {
-                Logger.getLogger(StorageBrowser.class.getName()).log(Level.SEVERE, null, ex);
+                Logger.getLogger(StorageBrowser.class.getName()).log(Level.SEVERE, "Error retrieving docs for iterator", ex);
+                return null;
             }
         }
         return _iterator;
