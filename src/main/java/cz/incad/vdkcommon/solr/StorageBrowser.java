@@ -48,18 +48,19 @@ public class StorageBrowser implements Iterable<Object> {
         this.rows = opts.getInt("indexer.browse.rows", 100);
 
         this.idField = opts.getString("indexer.browse.idfield", "id");
-        this.browseField = opts.getString("indexer.browse.field", "_version_");
+        this.browseField = opts.getString("indexer.browse.field", "timestamp");
         this.browseFieldType = opts.getString("indexer.browse.field.type", "long");
         this.browseFieldSort = opts.getBoolean("indexer.browse.field.sort", true);
         this.byTerms = opts.getBoolean("indexer.browse.byTerms", false);
 
         docs = new ArrayList<Object>();
         _init = false;
+        this.cursor = "*";
         _iterator = new StorageIterator();
     }
 
     public void setStart(String start) {
-        this.initStart = start;
+        this.cursor = start;
     }
 
     public void setHost(String host) {
@@ -80,12 +81,17 @@ public class StorageBrowser implements Iterable<Object> {
         docs.clear();
 
         String urlStr = host + "/select?wt=" + wt
-                + "&q=*:*&cursorMark=" + cursor;
-
-        if (initStart != null) {
-            urlStr += "&fq=" + initStart;
-        }
-        if (fl != null) {
+                //+ "&q=*:*&cursorMark=" + cursor;
+                + "&q=" + browseField + ":[" + cursor + "%20TO%20NOW]";
+//
+//        if (initStart != null) {
+//            urlStr += "&fq=" + initStart;
+//        }
+        if(fl == null){
+            //urlStr += "&fl=*," + browseField;
+        }else if(!fl.contains(browseField)){
+            urlStr += "&fl=" + fl + "," + browseField;
+        }else{
             urlStr += "&fl=" + fl;
         }
         urlStr += "&rows=" + rows + "&start=0";
@@ -108,11 +114,14 @@ public class StorageBrowser implements Iterable<Object> {
         JSONObject json = new JSONObject(resp.toString());
         JSONObject response = json.getJSONObject("response");
         numFound = response.getInt("numFound");
-        this.cursor = json.getString("nextCursorMark");
         JSONArray jdocs = response.getJSONArray("docs");
         numDocs = jdocs.length();
         for (int i = 0; i < jdocs.length(); i++) {
             docs.add(jdocs.getJSONObject(i));
+        }
+        //this.cursor = json.getString("nextCursorMark");
+        if(numDocs > 0){
+            this.cursor = jdocs.getJSONObject(numDocs-1).getString(browseField);
         }
 
     }
@@ -121,7 +130,8 @@ public class StorageBrowser implements Iterable<Object> {
     public Iterator iterator() {
         if (!_init) {
             try {
-                getDocs("*");
+                
+                getDocs(cursor);
             } catch (Exception ex) {
                 Logger.getLogger(StorageBrowser.class.getName()).log(Level.SEVERE, "Error retrieving docs for iterator", ex);
                 return null;

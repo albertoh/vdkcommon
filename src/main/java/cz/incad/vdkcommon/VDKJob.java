@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.json.JSONObject;
 import static org.quartz.DateBuilder.evenMinuteDate;
 import org.quartz.InterruptableJob;
 import org.quartz.JobBuilder;
@@ -46,8 +47,14 @@ public class VDKJob implements InterruptableJob {
                 return;
             }
 
-            JobDataMap data = jec.getJobDetail().getJobDataMap();
-            jobdata = (VDKJobData) data.get("jobdata");
+            JobDataMap data = jec.getMergedJobDataMap();
+            if(data.containsKey("runtime_data")){
+                jobdata = (VDKJobData) data.get("jobdata");
+                jobdata.setRuntimeOptions((JSONObject) data.get("runtime_data"));
+            }else{
+                jobdata = (VDKJobData) data.get("jobdata");
+            }
+            
             jobdata.load();
             jobdata.setInterrupted(false);
 
@@ -56,7 +63,7 @@ public class VDKJob implements InterruptableJob {
                 oh.harvest();
             }else if(jobdata.getType().equalsIgnoreCase("index")){
                 Indexer indexer =  new Indexer(jobdata);
-                indexer.update();
+                indexer.run();
             }
 
             LOGGER.log(Level.INFO, "jobKey: {0}", jobKey);
@@ -66,43 +73,6 @@ public class VDKJob implements InterruptableJob {
         } catch (Exception ex) {
             Logger.getLogger(VDKJob.class.getName()).log(Level.SEVERE, null, ex);
         }
-    }
-
-    public void harvestScheduled(VDKJobData jobdata) {
-
-        try {
-            String name = jobdata.getName();
-            Scheduler sched;
-            sched = VDKScheduler.getInstance().getScheduler();
-
-            Map<String, Object> map = new HashMap<String, Object>();
-
-            map.put("jobdata", jobdata);
-            JobDataMap data = JobDataMapSupport.newJobDataMap(map);
-
-            // compute a time that is on the next round minute   
-            Date runTime = evenMinuteDate(new Date());
-            // Trigger the job to run on the next round minute   
-            Trigger trigger = newTrigger()
-                    .withIdentity("job_" + name)
-                    .startAt(runTime)
-                    .build();
-
-            JobDetail job = JobBuilder.newJob(VDKJob.class)
-                    .withIdentity("job_" + name)
-                    .setJobData(data)
-                    .build();
-            if (sched.checkExists(job.getKey())) {
-                sched.deleteJob(job.getKey());
-            }
-
-            sched.scheduleJob(job, trigger);
-            LOGGER.log(Level.INFO, "Cron for {0} scheduled with {1}", new Object[]{name, runTime});
-
-        } catch (SchedulerException ex) {
-            LOGGER.log(Level.SEVERE, null, ex);
-        }
-
     }
 
     @Override

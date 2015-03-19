@@ -28,7 +28,7 @@ public class VDKJobData {
     private String statusFile;
     
     private boolean interrupted = false;
-    private final JSONObject runtimeOptions;
+    private JSONObject runtimeOptions;
     private String name;
     
     public VDKJobData(String conf, JSONObject runtime) throws Exception{
@@ -102,6 +102,14 @@ public class VDKJobData {
         this.opts = opts;
     }
 
+
+    /**
+     * @param runtimeOptions the runtimeOptions to set
+     */
+    public void setRuntimeOptions(JSONObject runtimeOptions) {
+        this.runtimeOptions = runtimeOptions;
+    }
+    
     /**
      * @return the configFile
      */
