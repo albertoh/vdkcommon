@@ -82,7 +82,7 @@ public class StorageBrowser implements Iterable<Object> {
 
         String urlStr = host + "/select?wt=" + wt
                 //+ "&q=*:*&cursorMark=" + cursor;
-                + "&q=" + browseField + ":[" + cursor + "%20TO%20NOW]";
+                + "&q=" + browseField + ":{" + cursor + "%20TO%20NOW]";
 //
 //        if (initStart != null) {
 //            urlStr += "&fq=" + initStart;
