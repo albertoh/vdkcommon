@@ -5,11 +5,11 @@
  */
 package cz.incad.vdkcommon.solr;
 
+import cz.incad.vdkcommon.Bohemika;
 import cz.incad.vdkcommon.DbUtils;
 import cz.incad.vdkcommon.Options;
 import cz.incad.vdkcommon.SolrIndexerCommiter;
 import cz.incad.vdkcommon.VDKJobData;
-import cz.incad.vdkcommon.oai.HarvesterJobData;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -41,61 +41,61 @@ import org.w3c.dom.Document;
  * @author alberto
  */
 public class Indexer {
-    
+
     static final Logger logger = Logger.getLogger(Indexer.class.getName());
-    
+
     int total = 0;
-    
+
     private final String LAST_UPDATE = "last_run";
     private final String LAST_MESSAGE = "last_message";
     private String statusFileName;
     JSONObject statusJson;
-    
+
     private final Options opts;
     private final VDKJobData jobData;
     String configFile;
     Transformer transformer;
     Transformer trId;
-    
+
     public Indexer() throws Exception {
         this.jobData = null;
         this.configFile = null;
         opts = Options.getInstance();
         init();
     }
-    
+
     public Indexer(VDKJobData jobData) throws Exception {
         this.jobData = jobData;
         this.configFile = jobData.getConfigFile();
         opts = Options.getInstance();
         init();
     }
-    
+
     public Indexer(String configFile) throws Exception {
         this.configFile = configFile;
         this.jobData = new VDKJobData(configFile, new JSONObject());
         opts = Options.getInstance();
         init();
-        
+
     }
-    
+
     private void init() throws Exception {
         TransformerFactory tfactory = TransformerFactory.newInstance();
         StreamSource xslt = new StreamSource(new File(opts.getString("indexerXSL", "vdk_md5.xsl")));
         transformer = tfactory.newTransformer(xslt);
         StreamSource xslt2 = new StreamSource(new File(opts.getString("indexerIdXSL", "vdk_id.xsl")));
         trId = tfactory.newTransformer(xslt2);
-        if(this.jobData != null){
-            statusFileName = System.getProperty("user.home") + 
-                File.separator + ".vdkcr" + File.separator + 
-                File.separator + "jobs" + File.separator + 
-                File.separator + "status" + File.separator + "indexer.status";
-        }else{
+        if (this.jobData == null) {
+            statusFileName = System.getProperty("user.home")
+                    + File.separator + ".vdkcr" + File.separator
+                    + File.separator + "jobs" + File.separator
+                    + File.separator + "status" + File.separator + "indexer.status";
+        } else {
             statusFileName = jobData.getStatusFile();
         }
         readStatus();
     }
-    
+
     public void clean() throws Exception {
         logger.log(Level.INFO, "Cleaning index...");
         String s = "<delete><query>*:*</query></delete>";
@@ -103,7 +103,7 @@ public class Indexer {
         SolrIndexerCommiter.postData("<commit/>");
         logger.log(Level.INFO, "Index cleaned");
     }
-    
+
     public void reindex() throws Exception {
         clean();
         index();
@@ -111,11 +111,12 @@ public class Indexer {
         indexAllDemands();
         indexAllWanted();
     }
-    
+
     private StringBuilder doIndexDemandXml(String knihovna,
             String docCode,
             String zaznam,
-            String exemplar, String update) throws Exception {
+            String exemplar,
+            String update) throws Exception {
         StringBuilder sb = new StringBuilder();
         sb.append("<doc>");
         sb.append("<field name=\"code\">")
@@ -134,13 +135,13 @@ public class Indexer {
         j.put("zaznam", zaznam);
         j.put("exemplar", exemplar);
         sb.append("<field name=\"poptavka_ext\" update=\"").append(update).append("\">")
-                    .append(j)
-                    .append("</field>");
-        
+                .append(j)
+                .append("</field>");
+
         sb.append("</doc>");
-            return sb;
+        return sb;
     }
-    
+
     public void indexAllDemands() throws Exception {
         Connection conn = DbUtils.getConnection();
         String sql = "SELECT zaznamDemand.zaznamDemand_id, "
@@ -162,19 +163,21 @@ public class Indexer {
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
     }
-    
-    public void indexAllWanted() throws Exception {
+
+    public void indexWanted(int wanted_id) throws Exception {
         Connection conn = DbUtils.getConnection();
         String sql = "select w.wants, zo.knihovna, k.code, zo.uniquecode from WANTED w, KNIHOVNA k, ZAZNAMOFFER zo "
-                + "where w.knihovna=k.knihovna_id and zo.zaznamoffer_id=w.zaznamoffer";
+                + "where w.wanted_id=? "
+                + "and w.knihovna=k.knihovna_id and zo.zaznamoffer_id=w.zaznamoffer";
         PreparedStatement ps = conn.prepareStatement(sql);
+        ps.setInt(1, wanted_id);
 
         ResultSet rs = ps.executeQuery();
 
         StringBuilder sb = new StringBuilder();
         sb.append("<add>");
         while (rs.next()) {
-        sb.append("<doc>");
+            sb.append("<doc>");
             String uniquecode = rs.getString("uniquecode");
             sb.append("<field name=\"code\">")
                     .append(uniquecode)
@@ -197,41 +200,301 @@ public class Indexer {
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
     }
-    
-    
-    private StringBuilder doIndexOfferXml(int id, String docCode, String codeType, ResultSet rs) throws Exception {
-        
+
+    private StringBuilder doIndexOfferXml(int offerid,
+            String docCode,
+            String codeType,
+            int zaznamoffer_id,
+            String zaznam,
+            String exemplar,
+            String fields) throws Exception {
+
         StringBuilder sb = new StringBuilder();
-            sb.append("<doc>");
+        sb.append("<doc>");
+        sb.append("<field name=\"code\">")
+                .append(docCode)
+                .append("</field>");
+        sb.append("<field name=\"md5\">")
+                .append(docCode)
+                .append("</field>");
+        sb.append("<field name=\"code_type\">")
+                .append(codeType)
+                .append("</field>");
+        sb.append("<field name=\"nabidka\" update=\"add\">")
+                .append(offerid)
+                .append("</field>");
+        JSONObject nabidka_ext = new JSONObject();
+        JSONObject nabidka_ext_n = new JSONObject();
+        nabidka_ext_n.put("zaznamOffer", zaznamoffer_id);
+        nabidka_ext_n.put("code", docCode);
+        nabidka_ext_n.put("zaznam", zaznam);
+        nabidka_ext_n.put("ex", exemplar);
+        nabidka_ext_n.put("fields", new JSONObject(fields));
+        nabidka_ext.put("" + offerid, nabidka_ext_n);
+        sb.append("<field name=\"nabidka_ext\" update=\"add\">")
+                .append(nabidka_ext)
+                .append("</field>");
+        sb.append("</doc>");
+        return sb;
+    }
+
+    public void indexOffer(int id) throws Exception {
+        Connection conn = DbUtils.getConnection();
+        String sql = "SELECT ZaznamOffer.zaznamoffer_id, ZaznamOffer.uniqueCode, "
+                + "ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
+                + "FROM zaznamOffer "
+                + "ON ZaznamOffer.zaznam=zaznam.identifikator "
+                + "where ZaznamOffer.offer=?";
+        PreparedStatement ps = conn.prepareStatement(sql);
+        ps.setInt(1, id);
+
+        ResultSet rs = ps.executeQuery();
+        StringBuilder sb = new StringBuilder();
+        sb.append("<add>");
+        while (rs.next()) {
+            SolrDocument sdoc = Storage.getDoc(rs.getString("zaznam"));
+            if (sdoc != null) {
+                sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        (String) sdoc.getFieldValue("code"),
+                        (String) sdoc.getFieldValue("code_type"),
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
+            }
+        }
+        sb.append("</add>");
+        SolrIndexerCommiter.postData(sb.toString());
+        SolrIndexerCommiter.postData("<commit/>");
+    }
+
+    public void removeAllWanted() throws Exception {
+        SolrQuery query = new SolrQuery("chci:[* TO *]");
+        query.addField("code");
+        SolrDocumentList docs = IndexerQuery.query(query);
+        long numFound = docs.getNumFound();
+        Iterator<SolrDocument> iter = docs.iterator();
+        while (iter.hasNext()) {
+            if (jobData.isInterrupted()) {
+                logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                break;
+            }
+            StringBuilder sb = new StringBuilder();
+
+            SolrDocument resultDoc = iter.next();
+            String docCode = (String) resultDoc.getFieldValue("code");
+            sb.append("<add><doc>");
             sb.append("<field name=\"code\">")
                     .append(docCode)
                     .append("</field>");
             sb.append("<field name=\"md5\">")
                     .append(docCode)
                     .append("</field>");
-            sb.append("<field name=\"code_type\">")
-                    .append(codeType)
+
+            sb.append("<field name=\"chci\" update=\"set\" null=\"true\" />");
+            sb.append("</doc></add>");
+            SolrIndexerCommiter.postData(sb.toString());
+            SolrIndexerCommiter.postData("<commit/>");
+        }
+        query.setQuery("nechci:[* TO *]");
+        query.addField("code");
+        docs = IndexerQuery.query(query);
+        iter = docs.iterator();
+        while (iter.hasNext()) {
+            if (jobData.isInterrupted()) {
+                logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                break;
+            }
+            StringBuilder sb = new StringBuilder();
+
+            SolrDocument resultDoc = iter.next();
+            String docCode = (String) resultDoc.getFieldValue("code");
+            sb.append("<add><doc>");
+            sb.append("<field name=\"code\">")
+                    .append(docCode)
                     .append("</field>");
-            sb.append("<field name=\"nabidka\" update=\"add\">")
-                    .append(id)
+            sb.append("<field name=\"md5\">")
+                    .append(docCode)
                     .append("</field>");
-            JSONObject nabidka_ext = new JSONObject();
-            JSONObject nabidka_ext_n = new JSONObject();
-            nabidka_ext_n.put("zaznamOffer", rs.getInt("zaznamoffer_id"));
-            nabidka_ext_n.put("code", docCode);
-            nabidka_ext_n.put("zaznam", rs.getString("zaznam"));
-            nabidka_ext_n.put("ex", rs.getString("exemplar"));
-            nabidka_ext_n.put("fields", new JSONObject(rs.getString("fields")));
-            nabidka_ext.put(""+id, nabidka_ext_n);
-            sb.append("<field name=\"nabidka_ext\" update=\"add\">")
-                    .append(nabidka_ext)
-                    .append("</field>");
-            sb.append("</doc>");
-            return sb;
+
+            sb.append("<field name=\"nechci\" update=\"set\" null=\"true\" />");
+            sb.append("</doc></add>");
+            SolrIndexerCommiter.postData(sb.toString());
+            SolrIndexerCommiter.postData("<commit/>");
+        }
+
+        numFound += docs.getNumFound();
+        if (numFound > 0 && !jobData.isInterrupted()) {
+            removeAllWanted();
+        }
     }
-    
+
+    public void removeAllOffers() throws Exception {
+        SolrQuery query = new SolrQuery("nabidka:[* TO *]");
+        query.addField("code");
+        SolrDocumentList docs = IndexerQuery.query(query);
+        Iterator<SolrDocument> iter = docs.iterator();
+        while (iter.hasNext()) {
+            if (jobData.isInterrupted()) {
+                logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                break;
+            }
+            StringBuilder sb = new StringBuilder();
+
+            SolrDocument resultDoc = iter.next();
+            String docCode = (String) resultDoc.getFieldValue("code");
+            sb.append("<add><doc>");
+            sb.append("<field name=\"code\">")
+                    .append(docCode)
+                    .append("</field>");
+            sb.append("<field name=\"md5\">")
+                    .append(docCode)
+                    .append("</field>");
+
+            sb.append("<field name=\"nabidka\" update=\"set\" null=\"true\" />");
+            sb.append("<field name=\"nabidka_ext\" update=\"set\" null=\"true\" />");
+            sb.append("</doc></add>");
+            SolrIndexerCommiter.postData(sb.toString());
+            SolrIndexerCommiter.postData("<commit/>");
+        }
+
+        long numFound = docs.getNumFound();
+        if (numFound > 0 && !jobData.isInterrupted()) {
+            removeAllOffers();
+        }
+    }
+
+    public void indexDemand(String knihovna,
+            String docCode,
+            String zaznam,
+            String exemplar) throws Exception {
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<add>");
+        sb.append(doIndexDemandXml(knihovna,
+                docCode,
+                zaznam,
+                exemplar,
+                "add"));
+        sb.append("</add>");
+        SolrIndexerCommiter.postData(sb.toString());
+        SolrIndexerCommiter.postData("<commit/>");
+    }
+
+    public void removeAllDemands() throws Exception {
+        SolrQuery query = new SolrQuery("poptavka:[* TO *]");
+        query.addField("code");
+        query.setRows(1000);
+        SolrDocumentList docs = IndexerQuery.query(query);
+        long numFound = docs.getNumFound();
+        Iterator<SolrDocument> iter = docs.iterator();
+        while (iter.hasNext()) {
+            if (jobData.isInterrupted()) {
+                logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                break;
+            }
+            StringBuilder sb = new StringBuilder();
+
+            SolrDocument resultDoc = iter.next();
+            String docCode = (String) resultDoc.getFieldValue("code");
+            sb.append("<add><doc>");
+            sb.append("<field name=\"code\">")
+                    .append(docCode)
+                    .append("</field>");
+            sb.append("<field name=\"md5\">")
+                    .append(docCode)
+                    .append("</field>");
+
+            sb.append("<field name=\"poptavka\" update=\"set\" null=\"true\" />");
+            sb.append("<field name=\"poptavka_ext\" update=\"set\" null=\"true\" />");
+            sb.append("</doc></add>");
+            SolrIndexerCommiter.postData(sb.toString());
+            SolrIndexerCommiter.postData("<commit/>");
+            logger.log(Level.INFO, "Demands for {0} removed.", docCode);
+        }
+        if (numFound > 0 && !jobData.isInterrupted()) {
+            removeAllDemands();
+        }
+    }
+
+    public void removeDemand(String knihovna,
+            String docCode,
+            String zaznam,
+            String exemplar) throws Exception {
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<add>");
+        sb.append(doIndexDemandXml(knihovna,
+                docCode,
+                zaznam,
+                exemplar,
+                "remove"));
+        sb.append("</add>");
+        logger.log(Level.INFO, sb.toString());
+        SolrIndexerCommiter.postData(sb.toString());
+        SolrIndexerCommiter.postData("<commit/>");
+    }
+
+    private void removeWanted(String knihovna, String code, String codeType) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<add><doc>");
+        sb.append("<field name=\"code\">")
+                .append(code)
+                .append("</field>");
+        sb.append("<field name=\"md5\">")
+                .append(code)
+                .append("</field>");
+        sb.append("<field name=\"code_type\">")
+                .append(codeType)
+                .append("</field>");
+        sb.append("<field name=\"chci\" update=\"remove\">").append(knihovna).append("</field>");
+        sb.append("<field name=\"nechci\" update=\"remove\">").append(knihovna).append("</field>");
+        sb.append("</doc></add>");
+        SolrIndexerCommiter.postData(sb.toString());
+        SolrIndexerCommiter.postData("<commit/>");
+    }
+
+    public void indexAllWanted() throws Exception {
+        Connection conn = DbUtils.getConnection();
+        String sql = "select w.wants, zo.knihovna, k.code, zo.uniquecode from WANTED w, KNIHOVNA k, ZAZNAMOFFER zo "
+                + "where w.knihovna=k.knihovna_id and zo.zaznamoffer_id=w.zaznamoffer";
+        PreparedStatement ps = conn.prepareStatement(sql);
+
+        ResultSet rs = ps.executeQuery();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<add>");
+        while (rs.next()) {
+            if (jobData.isInterrupted()) {
+                logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                break;
+            }
+            sb.append("<doc>");
+            String uniquecode = rs.getString("uniquecode");
+            sb.append("<field name=\"code\">")
+                    .append(uniquecode)
+                    .append("</field>");
+            sb.append("<field name=\"md5\">")
+                    .append(uniquecode)
+                    .append("</field>");
+            if (rs.getBoolean(1)) {
+                sb.append("<field name=\"chci\" update=\"add\">")
+                        .append(rs.getString("code"))
+                        .append("</field>");
+            } else {
+                sb.append("<field name=\"nechci\" update=\"add\">")
+                        .append(rs.getString("code"))
+                        .append("</field>");
+            }
+            sb.append("</doc>");
+        }
+        sb.append("</add>");
+        SolrIndexerCommiter.postData(sb.toString());
+        SolrIndexerCommiter.postData("<commit/>");
+    }
+
     public void removeOffer(int id) throws Exception {
-        Connection conn= DbUtils.getConnection();
+        Connection conn = DbUtils.getConnection();
         String sql = "SELECT ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields, zaznam.codetype "
                 + "FROM Zaznam "
                 + "RIGHT OUTER JOIN zaznamOffer "
@@ -276,7 +539,7 @@ public class Indexer {
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
     }
-    
+
     public void indexAllOffers() throws Exception {
         Connection conn = DbUtils.getConnection();
         String sql = "SELECT ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
@@ -289,37 +552,44 @@ public class Indexer {
         StringBuilder sb = new StringBuilder();
         sb.append("<add>");
         while (rs.next()) {
-            SolrDocument sdoc = Storage.getDoc(rs.getString("zaznam"));
-            if(sdoc != null){
-                sb.append(doIndexOfferXml(rs.getInt("offer"), 
-                        (String)sdoc.getFieldValue("code"),
-                        (String)sdoc.getFieldValue("code_type"),
-                        rs));
+            if (jobData.isInterrupted()) {
+                logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                break;
             }
-            
+            SolrDocument sdoc = Storage.getDoc(rs.getString("zaznam"));
+            if (sdoc != null) {
+                sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        (String) sdoc.getFieldValue("code"),
+                        (String) sdoc.getFieldValue("code_type"),
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
+            }
+
         }
         sb.append("</add>");
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
     }
-    
+
     public void reindexDoc(String uniqueCode) throws Exception {
-        
+
         logger.log(Level.INFO, "Cleaning doc {0} from index...", uniqueCode);
         String s = "<delete><query>code:" + uniqueCode + "</query></delete>";
         SolrIndexerCommiter.postData(s);
         SolrIndexerCommiter.postData("<commit/>");
-        
+
         indexDoc(uniqueCode);
     }
-    
+
     public void indexDoc(String uniqueCode) throws Exception {
-        
+
         try {
             logger.log(Level.INFO, "Indexace doc {0}...", uniqueCode);
             StringBuilder sb = new StringBuilder();
             sb.append("<add>");
-            
+
             SolrQuery query = new SolrQuery("code:\"" + uniqueCode + "\"");
             query.addField("id,code,code_type,xml");
             query.setRows(1000);
@@ -331,20 +601,20 @@ public class Indexer {
                     break;
                 }
                 SolrDocument resultDoc = iter.next();
-                
+
                 boolean bohemika = false;
                 if (resultDoc.getFieldValue("bohemika") != null) {
                     bohemika = (Boolean) resultDoc.getFieldValue("bohemika");
                 }
-                
+
                 sb.append(transformXML((String) resultDoc.getFieldValue("xml"),
                         uniqueCode,
                         (String) resultDoc.getFieldValue("code_type"),
                         (String) resultDoc.getFieldValue("id"),
                         bohemika));
-                
+
                 total++;
-                
+
             }
             sb.append("</add>");
             SolrIndexerCommiter.postData(sb.toString());
@@ -354,7 +624,7 @@ public class Indexer {
             logger.log(Level.SEVERE, "Error in reindex", ex);
         }
     }
-    
+
     public void removeDoc(String identifier) throws Exception {
         String url = String.format("%s/%s/update",
                 opts.getString("solrHost", "http://localhost:8080/solr"),
@@ -364,12 +634,12 @@ public class Indexer {
     }
 
     public void store(String id, String code, String codeType, boolean bohemika, String xml) throws Exception {
-        
+
         StringBuilder sb = new StringBuilder();
         try {
             logger.log(Level.INFO, "Storing document...");
             sb.append("<add>");
-            
+
             sb.append(doSorlXML(xml,
                     code,
                     codeType,
@@ -384,45 +654,48 @@ public class Indexer {
                 SolrIndexerCommiter.postData(url, "<commit/>");
                 logger.log(Level.INFO, "Current stored docs: {0}", total);
             }
-            
+
             total++;
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Error storing doc with " + sb.toString(), ex);
         }
     }
-    
+
     private void index() throws Exception {
         update(null);
         Date date = new Date();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
         String to = sdf.format(date);
-        
+
         statusJson.put(LAST_UPDATE, to);
         writeStatus();
     }
-    
+
     public void run() throws Exception {
-        if(jobData.getBoolean("full_index", false)){
+        if (jobData.getBoolean("full_index", false)) {
             reindex();
-        }else{
+        } else {
             if (statusJson.has(LAST_UPDATE)) {
                 update(statusJson.getString(LAST_UPDATE));
             } else {
                 update(null);
             }
-            if(jobData.getBoolean("reindex_offers", false)){
+            if (jobData.getBoolean("reindex_offers", false)) {
+                removeAllOffers();
                 indexAllOffers();
             }
-            if(jobData.getBoolean("reindex_demands", false)){
+            if (jobData.getBoolean("reindex_demands", false)) {
+                removeAllDemands();
                 indexAllDemands();
             }
-            if(jobData.getBoolean("reindex_wanted", false)){
+            if (jobData.getBoolean("reindex_wanted", false)) {
+                removeAllWanted();
                 indexAllWanted();
             }
         }
-        
+
     }
-    
+
     private void readStatus() throws IOException {
         File statusFile = new File(statusFileName);
         if (statusFile.exists()) {
@@ -430,17 +703,17 @@ public class Indexer {
         } else {
             statusJson = new JSONObject();
         }
-        
+
     }
-    
+
     private void writeStatus() throws FileNotFoundException, IOException {
         File statusFile = new File(statusFileName);
         FileUtils.writeStringToFile(statusFile, statusJson.toString());
-        
+
     }
-    
+
     private void update(String fq) throws Exception {
-        
+
         try {
             StorageBrowser docs = new StorageBrowser();
             docs.setWt("json");
@@ -457,18 +730,20 @@ public class Indexer {
                     break;
                 }
                 JSONObject doc = (JSONObject) it.next();
-                
+
                 boolean bohemika = false;
                 if (doc.has("bohemika")) {
                     bohemika = (Boolean) doc.getBoolean("bohemika");
+                } else {
+                    bohemika = Bohemika.isBohemika(doc.getString("xml"));
                 }
-                
+
                 sb.append(transformXML((String) doc.optString("xml", ""),
                         doc.getString("code"),
                         (String) doc.getString("code_type"),
                         (String) doc.getString("id"),
                         bohemika));
-                if(doc.has("timestamp")){
+                if (doc.has("timestamp")) {
                     statusJson.put(LAST_UPDATE, doc.getString("timestamp"));
                 }
                 if (total % 1000 == 0) {
@@ -481,12 +756,12 @@ public class Indexer {
                     statusJson.put(LAST_MESSAGE, "Current indexed docs: " + total);
                     writeStatus();
                 }
-                
+
                 total++;
             }
             sb.append("</add>");
             SolrIndexerCommiter.postData(sb.toString());
-            
+
             SolrIndexerCommiter.postData("<commit/>");
             logger.log(Level.INFO, "REINDEX FINISHED. Total docs: {0}", total);
             statusJson.put(LAST_MESSAGE, "INDEX FINISHED. Total docs: " + total);
@@ -495,7 +770,7 @@ public class Indexer {
             logger.log(Level.SEVERE, "Error in reindex", ex);
         }
     }
-    
+
     public void processXML(File file) throws Exception {
         logger.log(Level.FINE, "Sending {0} to index ...", file.getAbsolutePath());
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -503,7 +778,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         SolrIndexerCommiter.postData(sw.toString());
     }
-    
+
     public void processXML(Document doc) throws Exception {
         logger.log(Level.FINE, "Sending to index ...");
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -511,7 +786,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         SolrIndexerCommiter.postData(sw.toString());
     }
-    
+
     private String doSorlXML(String xml, String uniqueCode, String codeType, String identifier, boolean bohemika) throws Exception {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -523,7 +798,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         return sw.toString();
     }
-    
+
     private String transformXML(String xml, String uniqueCode, String codeType, String identifier, boolean bohemika) throws Exception {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -535,7 +810,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         return sw.toString();
     }
-    
+
     public void processXML(String xml, String uniqueCode, String codeType, String identifier, boolean bohemika) throws Exception {
         logger.log(Level.FINE, "Transforming {0} ...", identifier);
         StreamResult destStream = new StreamResult(new StringWriter());
@@ -546,7 +821,7 @@ public class Indexer {
         StringWriter sw = (StringWriter) destStream.getWriter();
         SolrIndexerCommiter.postData(sw.toString());
     }
-    
+
     public static void main(String[] args) throws SQLException {
         Connection conn = null;
         try {
@@ -555,11 +830,12 @@ public class Indexer {
 //                    "jdbc:postgresql://localhost:5432/vdk",
 //                    "vdk",
 //                    "vdk");
-            Indexer indexer = new Indexer("vkol");
-            indexer.reindex();
+            Indexer indexer = new Indexer();
+            //indexer.reindex();
+            indexer.removeAllDemands();
         } catch (Exception ex) {
             logger.log(Level.SEVERE, null, ex);
         }
     }
-    
+
 }
