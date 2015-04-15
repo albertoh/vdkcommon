@@ -239,12 +239,12 @@ public class Indexer {
     }
 
     public void indexOffer(int id) throws Exception {
+        logger.log(Level.INFO, "indexing offer {0}", id);
         Connection conn = DbUtils.getConnection();
-        String sql = "SELECT ZaznamOffer.zaznamoffer_id, ZaznamOffer.uniqueCode, "
-                + "ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
-                + "FROM zaznamOffer "
-                + "ON ZaznamOffer.zaznam=zaznam.identifikator "
-                + "where ZaznamOffer.offer=?";
+
+        String sql = "SELECT ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
+                + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
+                + "FROM zaznamOffer where zaznamOffer.offer=?";
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setInt(1, id);
 
@@ -252,7 +252,7 @@ public class Indexer {
         StringBuilder sb = new StringBuilder();
         sb.append("<add>");
         while (rs.next()) {
-            SolrDocument sdoc = Storage.getDoc(rs.getString("zaznam"));
+            SolrDocument sdoc = Storage.getDocByCode(rs.getString("uniquecode"));
             if (sdoc != null) {
                 sb.append(doIndexOfferXml(rs.getInt("offer"),
                         (String) sdoc.getFieldValue("code"),
@@ -261,9 +261,18 @@ public class Indexer {
                         rs.getString("zaznam"),
                         rs.getString("exemplar"),
                         rs.getString("fields")));
+            } else {
+                sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getString("uniquecode"),
+                        "",
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
             }
         }
         sb.append("</add>");
+        logger.log(Level.INFO, "adding {0}", sb.toString());
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
     }
@@ -556,11 +565,19 @@ public class Indexer {
                 logger.log(Level.INFO, "INDEXER INTERRUPTED");
                 break;
             }
-            SolrDocument sdoc = Storage.getDoc(rs.getString("zaznam"));
+            SolrDocument sdoc = Storage.getDocByCode(rs.getString("uniquecode"));
             if (sdoc != null) {
                 sb.append(doIndexOfferXml(rs.getInt("offer"),
                         (String) sdoc.getFieldValue("code"),
                         (String) sdoc.getFieldValue("code_type"),
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
+            } else {
+                sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getString("uniquecode"),
+                        "",
                         rs.getInt("zaznamoffer_id"),
                         rs.getString("zaznam"),
                         rs.getString("exemplar"),
@@ -692,6 +709,10 @@ public class Indexer {
                 removeAllWanted();
                 indexAllWanted();
             }
+            if (!"".equals(jobData.getString("identifier", ""))) {
+                logger.log(Level.INFO, "----- Reindexing doc {0} ...", jobData.getString("identifier"));
+                reindexDoc(jobData.getString("identifier"));
+            }
         }
 
     }
@@ -731,33 +752,37 @@ public class Indexer {
                 }
                 JSONObject doc = (JSONObject) it.next();
 
-                boolean bohemika = false;
-                if (doc.has("bohemika")) {
-                    bohemika = (Boolean) doc.getBoolean("bohemika");
+                if (!jobData.getBoolean("full_index", false)) {
+                    reindexDoc(doc.getString("code"));
                 } else {
-                    bohemika = Bohemika.isBohemika(doc.getString("xml"));
-                }
+                    boolean bohemika = false;
+                    if (doc.has("bohemika")) {
+                        bohemika = (Boolean) doc.getBoolean("bohemika");
+                    } else {
+                        bohemika = Bohemika.isBohemika(doc.getString("xml"));
+                    }
 
-                sb.append(transformXML((String) doc.optString("xml", ""),
-                        doc.getString("code"),
-                        (String) doc.getString("code_type"),
-                        (String) doc.getString("id"),
-                        bohemika));
-                if (doc.has("timestamp")) {
-                    statusJson.put(LAST_UPDATE, doc.getString("timestamp"));
-                }
-                if (total % 1000 == 0) {
-                    sb.append("</add>");
-                    SolrIndexerCommiter.postData(sb.toString());
-                    SolrIndexerCommiter.postData("<commit/>");
-                    sb = new StringBuilder();
-                    sb.append("<add>");
-                    logger.log(Level.INFO, "Current indexed docs: {0}", total);
-                    statusJson.put(LAST_MESSAGE, "Current indexed docs: " + total);
-                    writeStatus();
-                }
+                    sb.append(transformXML((String) doc.optString("xml", ""),
+                            doc.getString("code"),
+                            (String) doc.getString("code_type"),
+                            (String) doc.getString("id"),
+                            bohemika));
+                    if (doc.has("timestamp")) {
+                        statusJson.put(LAST_UPDATE, doc.getString("timestamp"));
+                    }
+                    if (total % 1000 == 0) {
+                        sb.append("</add>");
+                        SolrIndexerCommiter.postData(sb.toString());
+                        SolrIndexerCommiter.postData("<commit/>");
+                        sb = new StringBuilder();
+                        sb.append("<add>");
+                        logger.log(Level.INFO, "Current indexed docs: {0}", total);
+                        statusJson.put(LAST_MESSAGE, "Current indexed docs: " + total);
+                        writeStatus();
+                    }
 
-                total++;
+                    total++;
+                }
             }
             sb.append("</add>");
             SolrIndexerCommiter.postData(sb.toString());

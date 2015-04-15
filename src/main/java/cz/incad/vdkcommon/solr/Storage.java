@@ -27,6 +27,18 @@ public class Storage {
         }
     }
 
+    public static SolrDocument getDocByCode(String code) throws IOException, SolrServerException {
+        SolrQuery query = new SolrQuery("code:\"" + code + "\"");
+        query.setRows(1);
+        SolrDocumentList docs = IndexerQuery.query(Options.getInstance().getString("solrIdCore", "vdk_id"), query);
+        Iterator<SolrDocument> iter = docs.iterator();
+        if (iter.hasNext()) {
+            return iter.next();
+        } else {
+            return null;
+        }
+    }
+
     public static boolean docExistsByCode(String docCode) throws IOException, SolrServerException {
         SolrQuery query = new SolrQuery("code:\"" + docCode + "\"");
         query.addField("id");
