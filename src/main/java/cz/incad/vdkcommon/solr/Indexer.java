@@ -590,7 +590,41 @@ public class Indexer {
         SolrIndexerCommiter.postData("<commit/>");
     }
 
-    public void reindexDoc(String uniqueCode) throws Exception {
+    public void reindexDocByIdentifier(String identifier) throws Exception {
+        logger.log(Level.INFO, "----- Reindexing doc {0} ...", identifier);
+
+        SolrQuery query = new SolrQuery("id:\"" + identifier + "\"");
+        query.addField("id,code");
+        query.setRows(1000);
+        SolrDocumentList docs = IndexerQuery.query(opts.getString("solrIdCore", "vdk_id"), query);
+        Iterator<SolrDocument> iter = docs.iterator();
+        while (iter.hasNext()) {
+            SolrDocument resultDoc = iter.next();
+            String uniqueCode = (String) resultDoc.getFieldValue("code");
+            reindexDoc(uniqueCode, identifier);
+        }
+    }
+
+    public void reindexDoc(String uniqueCode, String identifier) throws Exception {
+
+        String oldUniqueCode = null;
+        SolrQuery query = new SolrQuery("id:\"" + identifier + "\"");
+        query.addField("id,code");
+        query.setRows(1000);
+        SolrDocumentList docs = IndexerQuery.query(query);
+        Iterator<SolrDocument> iter = docs.iterator();
+        while (iter.hasNext()) {
+            SolrDocument resultDoc = iter.next();
+            oldUniqueCode = (String) resultDoc.getFieldValue("code");
+
+            if (oldUniqueCode != null && !oldUniqueCode.equals(uniqueCode)) {
+                logger.log(Level.INFO, "Cleaning doc {0} from index...", oldUniqueCode);
+                String s = "<delete><query>code:" + oldUniqueCode + "</query></delete>";
+                SolrIndexerCommiter.postData(s);
+                indexDoc(oldUniqueCode);
+                SolrIndexerCommiter.postData("<commit/>");
+            }
+        }
 
         logger.log(Level.INFO, "Cleaning doc {0} from index...", uniqueCode);
         String s = "<delete><query>code:" + uniqueCode + "</query></delete>";
@@ -711,7 +745,18 @@ public class Indexer {
             }
             if (!"".equals(jobData.getString("identifier", ""))) {
                 logger.log(Level.INFO, "----- Reindexing doc {0} ...", jobData.getString("identifier"));
-                reindexDoc(jobData.getString("identifier"));
+
+                SolrQuery query = new SolrQuery("id:\"" + jobData.getString("identifier") + "\"");
+                query.addField("id,code");
+                query.setRows(1000);
+                SolrDocumentList docs = IndexerQuery.query(opts.getString("solrIdCore", "vdk_id"), query);
+                Iterator<SolrDocument> iter = docs.iterator();
+                while (iter.hasNext()) {
+                    SolrDocument resultDoc = iter.next();
+                    String uniqueCode = (String) resultDoc.getFieldValue("code");
+                    reindexDoc(uniqueCode, jobData.getString("identifier"));
+                }
+
             }
         }
 
@@ -753,7 +798,7 @@ public class Indexer {
                 JSONObject doc = (JSONObject) it.next();
 
                 if (!jobData.getBoolean("full_index", false)) {
-                    reindexDoc(doc.getString("code"));
+                    reindexDoc(doc.getString("code"), doc.getString("id"));
                 } else {
                     boolean bohemika = false;
                     if (doc.has("bohemika")) {
