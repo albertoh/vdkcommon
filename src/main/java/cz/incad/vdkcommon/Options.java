@@ -33,15 +33,18 @@ public class Options {
         _sharedInstance = null;
         LOGGER.log(Level.INFO, "Options reseted");
     }
+    
+    private String path(){
+        return System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + "conf.json";
+    }
 
     public Options() throws IOException, JSONException {
-        String path = System.getProperty("user.home") + File.separator + ".vdkcr" + File.separator + "conf.json";
         File fdef = FileUtils.toFile(Options.class.getResource("/cz/incad/vdkcommon/conf.json"));
 
         String json = FileUtils.readFileToString(fdef, "UTF-8");
         conf = new JSONObject(json);
 
-        File f = new File(path);
+        File f = new File(path());
         if (f.exists() && f.canRead()) {
             json = FileUtils.readFileToString(f, "UTF-8");
             JSONObject confCustom = new JSONObject(json);
@@ -86,5 +89,19 @@ public class Options {
     
     public JSONObject getJSONObject(String key){
         return conf.optJSONObject(key);
+    }
+    
+    public JSONObject asJSON(){
+        return conf;
+    }
+    
+    public void save() throws IOException{
+        File f = new File(path());
+        FileUtils.writeStringToFile(f, conf.toString(), "UTF-8");
+    }
+    
+    @Override
+    public String toString(){
+        return conf.toString();
     }
 }

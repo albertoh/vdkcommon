@@ -30,6 +30,7 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
@@ -74,6 +75,7 @@ public class Indexer {
     public Indexer(String configFile) throws Exception {
         this.configFile = configFile;
         this.jobData = new VDKJobData(configFile, new JSONObject());
+        this.jobData.load();
         opts = Options.getInstance();
         init();
 
@@ -232,7 +234,7 @@ public class Indexer {
         nabidka_ext_n.put("fields", new JSONObject(fields));
         nabidka_ext.put("" + offerid, nabidka_ext_n);
         sb.append("<field name=\"nabidka_ext\" update=\"add\">")
-                .append(nabidka_ext)
+                .append(StringEscapeUtils.escapeXml(nabidka_ext.toString()))
                 .append("</field>");
         sb.append("</doc>");
         return sb;
@@ -272,7 +274,7 @@ public class Indexer {
             }
         }
         sb.append("</add>");
-        logger.log(Level.INFO, "adding {0}", sb.toString());
+        logger.log(Level.FINE, "adding {0}", sb.toString());
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
     }
@@ -763,6 +765,7 @@ public class Indexer {
     }
 
     private void readStatus() throws IOException {
+        logger.log(Level.INFO, "reading status file {0}", statusFileName);
         File statusFile = new File(statusFileName);
         if (statusFile.exists()) {
             statusJson = new JSONObject(FileUtils.readFileToString(statusFile, "UTF-8"));
