@@ -57,6 +57,8 @@ public class Indexer {
     String configFile;
     Transformer transformer;
     Transformer trId;
+    
+    SimpleDateFormat sdf;
 
     public Indexer() throws Exception {
         this.jobData = null;
@@ -82,6 +84,7 @@ public class Indexer {
     }
 
     private void init() throws Exception {
+        sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
         TransformerFactory tfactory = TransformerFactory.newInstance();
         StreamSource xslt = new StreamSource(new File(opts.getString("indexerXSL", "vdk_md5.xsl")));
         transformer = tfactory.newTransformer(xslt);
@@ -204,6 +207,7 @@ public class Indexer {
     }
 
     private StringBuilder doIndexOfferXml(int offerid,
+            Date datum,
             String docCode,
             String codeType,
             int zaznamoffer_id,
@@ -225,12 +229,16 @@ public class Indexer {
         sb.append("<field name=\"nabidka\" update=\"add\">")
                 .append(offerid)
                 .append("</field>");
+        sb.append("<field name=\"nabidka_datum\" update=\"add\">")
+                .append(sdf.format(datum))
+                .append("</field>");
         JSONObject nabidka_ext = new JSONObject();
         JSONObject nabidka_ext_n = new JSONObject();
         nabidka_ext_n.put("zaznamOffer", zaznamoffer_id);
         nabidka_ext_n.put("code", docCode);
         nabidka_ext_n.put("zaznam", zaznam);
         nabidka_ext_n.put("ex", exemplar);
+        nabidka_ext_n.put("datum", datum);
         nabidka_ext_n.put("fields", new JSONObject(fields));
         nabidka_ext.put("" + offerid, nabidka_ext_n);
         sb.append("<field name=\"nabidka_ext\" update=\"add\">")
@@ -244,9 +252,9 @@ public class Indexer {
         logger.log(Level.INFO, "indexing offer {0}", id);
         Connection conn = DbUtils.getConnection();
 
-        String sql = "SELECT ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
+        String sql = "SELECT offer.datum, ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
                 + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
-                + "FROM zaznamOffer where zaznamOffer.offer=?";
+                + "FROM zaznamOffer where offer.offer_id=zaznamOffer.offer and zaznamOffer.offer=?";
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setInt(1, id);
 
@@ -257,6 +265,7 @@ public class Indexer {
             SolrDocument sdoc = Storage.getDocByCode(rs.getString("uniquecode"));
             if (sdoc != null) {
                 sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getDate("datum"),
                         (String) sdoc.getFieldValue("code"),
                         (String) sdoc.getFieldValue("code_type"),
                         rs.getInt("zaznamoffer_id"),
@@ -265,6 +274,7 @@ public class Indexer {
                         rs.getString("fields")));
             } else {
                 sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getDate("datum"),
                         rs.getString("uniquecode"),
                         "",
                         rs.getInt("zaznamoffer_id"),
@@ -553,7 +563,7 @@ public class Indexer {
 
     public void indexAllOffers() throws Exception {
         Connection conn = DbUtils.getConnection();
-        String sql = "SELECT ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
+        String sql = "SELECT offer,datum, ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
                 + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
                 + "FROM zaznamOffer "
                 + "JOIN offer ON offer.offer_id=zaznamOffer.offer where offer.closed=?";
@@ -570,6 +580,7 @@ public class Indexer {
             SolrDocument sdoc = Storage.getDocByCode(rs.getString("uniquecode"));
             if (sdoc != null) {
                 sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getDate("datum"),
                         (String) sdoc.getFieldValue("code"),
                         (String) sdoc.getFieldValue("code_type"),
                         rs.getInt("zaznamoffer_id"),
@@ -578,6 +589,7 @@ public class Indexer {
                         rs.getString("fields")));
             } else {
                 sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getDate("datum"),
                         rs.getString("uniquecode"),
                         "",
                         rs.getInt("zaznamoffer_id"),
@@ -717,7 +729,7 @@ public class Indexer {
     private void index() throws Exception {
         update(null);
         Date date = new Date();
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        
         String to = sdf.format(date);
 
         statusJson.put(LAST_UPDATE, to);
