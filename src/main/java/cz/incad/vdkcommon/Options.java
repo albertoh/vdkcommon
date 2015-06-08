@@ -31,7 +31,7 @@ public class Options {
     
     public synchronized static void resetInstance(){
         _sharedInstance = null;
-        LOGGER.log(Level.INFO, "Options reseted");
+        LOGGER.log(Level.FINE, "Options reseted");
     }
     
     private String path(){
@@ -51,7 +51,7 @@ public class Options {
             Iterator keys = confCustom.keys();
             while (keys.hasNext() ) {
                 String key = (String) keys.next();
-                LOGGER.log(Level.INFO, "key {0} will be overrided", key);
+                LOGGER.log(Level.FINE, "key {0} will be overrided", key);
                 conf.put(key, confCustom.get(key));
             }
         }

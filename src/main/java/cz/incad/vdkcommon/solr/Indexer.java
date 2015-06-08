@@ -24,6 +24,7 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.naming.NamingException;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
@@ -32,6 +33,7 @@ import javax.xml.transform.stream.StreamSource;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 import org.json.JSONObject;
@@ -57,7 +59,7 @@ public class Indexer {
     String configFile;
     Transformer transformer;
     Transformer trId;
-    
+
     SimpleDateFormat sdf;
 
     public Indexer() throws Exception {
@@ -212,8 +214,10 @@ public class Indexer {
             String codeType,
             int zaznamoffer_id,
             String zaznam,
+            String knihovna,
+            String pr_knihovna,
             String exemplar,
-            String fields) throws Exception {
+            String fields) {
 
         StringBuilder sb = new StringBuilder();
         sb.append("<doc>");
@@ -237,6 +241,8 @@ public class Indexer {
         nabidka_ext_n.put("zaznamOffer", zaznamoffer_id);
         nabidka_ext_n.put("code", docCode);
         nabidka_ext_n.put("zaznam", zaznam);
+        nabidka_ext_n.put("knihovna", knihovna);
+        nabidka_ext_n.put("pr_knihovna", pr_knihovna);
         nabidka_ext_n.put("ex", exemplar);
         nabidka_ext_n.put("datum", datum);
         nabidka_ext_n.put("fields", new JSONObject(fields));
@@ -244,6 +250,12 @@ public class Indexer {
         sb.append("<field name=\"nabidka_ext\" update=\"add\">")
                 .append(StringEscapeUtils.escapeXml(nabidka_ext.toString()))
                 .append("</field>");
+
+        if (pr_knihovna != null) {
+            sb.append("<field name=\"chci\" update=\"add\">")
+                    .append(pr_knihovna)
+                    .append("</field>");
+        }
         sb.append("</doc>");
         return sb;
     }
@@ -253,6 +265,7 @@ public class Indexer {
         Connection conn = DbUtils.getConnection();
 
         String sql = "SELECT offer.datum, ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
+                + "ZaznamOffer.knihovna, ZaznamOffer.pr_knihovna, "
                 + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
                 + "FROM zaznamOffer where offer.offer_id=zaznamOffer.offer and zaznamOffer.offer=?";
         PreparedStatement ps = conn.prepareStatement(sql);
@@ -270,6 +283,8 @@ public class Indexer {
                         (String) sdoc.getFieldValue("code_type"),
                         rs.getInt("zaznamoffer_id"),
                         rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
                         rs.getString("exemplar"),
                         rs.getString("fields")));
             } else {
@@ -279,6 +294,8 @@ public class Indexer {
                         "",
                         rs.getInt("zaznamoffer_id"),
                         rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
                         rs.getString("exemplar"),
                         rs.getString("fields")));
             }
@@ -374,6 +391,7 @@ public class Indexer {
 
             sb.append("<field name=\"nabidka\" update=\"set\" null=\"true\" />");
             sb.append("<field name=\"nabidka_ext\" update=\"set\" null=\"true\" />");
+            sb.append("<field name=\"nabidka_datum\" update=\"set\" null=\"true\" />");
             sb.append("</doc></add>");
             SolrIndexerCommiter.postData(sb.toString());
             SolrIndexerCommiter.postData("<commit/>");
@@ -516,11 +534,10 @@ public class Indexer {
 
     public void removeOffer(int id) throws Exception {
         Connection conn = DbUtils.getConnection();
-        String sql = "SELECT ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields, zaznam.codetype "
-                + "FROM Zaznam "
-                + "RIGHT OUTER JOIN zaznamOffer "
-                + "ON ZaznamOffer.zaznam=zaznam.identifikator "
-                + "where ZaznamOffer.offer=?";
+        String sql = "SELECT ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, "
+                + "ZaznamOffer.fields, offer.datum "
+                + "FROM zaznamOffer, Offer "
+                + "where ZaznamOffer.offer=Offer.offer_id AND ZaznamOffer.offer=?";
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setInt(1, id);
 
@@ -530,7 +547,7 @@ public class Indexer {
         sb.append("<add>");
         while (rs.next()) {
             String docCode = rs.getString("uniqueCode");
-            String codeType = rs.getString("codetype");
+            String datum = sdf.format(rs.getDate("datum"));
             sb.append("<doc>");
             sb.append("<field name=\"code\">")
                     .append(docCode)
@@ -538,11 +555,11 @@ public class Indexer {
             sb.append("<field name=\"md5\">")
                     .append(docCode)
                     .append("</field>");
-            sb.append("<field name=\"code_type\">")
-                    .append(codeType)
-                    .append("</field>");
             sb.append("<field name=\"nabidka\" update=\"remove\">")
                     .append(id)
+                    .append("</field>");
+            sb.append("<field name=\"nabidka_datum\" update=\"remove\">")
+                    .append(datum)
                     .append("</field>");
             JSONObject nabidka_ext = new JSONObject();
             JSONObject nabidka_ext_n = new JSONObject();
@@ -564,7 +581,8 @@ public class Indexer {
     public void indexAllOffers() throws Exception {
         Connection conn = DbUtils.getConnection();
         String sql = "SELECT offer,datum, ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
-                + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
+                + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, "
+                + "ZaznamOffer.fields, ZaznamOffer.knihovna, ZaznamOffer.pr_knihovna "
                 + "FROM zaznamOffer "
                 + "JOIN offer ON offer.offer_id=zaznamOffer.offer where offer.closed=?";
         PreparedStatement ps = conn.prepareStatement(sql);
@@ -585,6 +603,8 @@ public class Indexer {
                         (String) sdoc.getFieldValue("code_type"),
                         rs.getInt("zaznamoffer_id"),
                         rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
                         rs.getString("exemplar"),
                         rs.getString("fields")));
             } else {
@@ -594,6 +614,8 @@ public class Indexer {
                         "",
                         rs.getInt("zaznamoffer_id"),
                         rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
                         rs.getString("exemplar"),
                         rs.getString("fields")));
             }
@@ -648,6 +670,76 @@ public class Indexer {
         indexDoc(uniqueCode);
     }
 
+    public void removeDocOffers(String uniqueCode) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<add><doc>");
+        sb.append("<field name=\"code\">")
+                .append(uniqueCode)
+                .append("</field>");
+        sb.append("<field name=\"md5\">")
+                .append(uniqueCode)
+                .append("</field>");
+
+        sb.append("<field name=\"nabidka\" update=\"set\" null=\"true\" />");
+        sb.append("<field name=\"nabidka_ext\" update=\"set\" null=\"true\" />");
+        sb.append("<field name=\"nabidka_datum\" update=\"set\" null=\"true\" />");
+        sb.append("<field name=\"chci\" update=\"set\" null=\"true\" />");
+        sb.append("<field name=\"nechci\" update=\"set\" null=\"true\" />");
+        sb.append("</doc></add>");
+
+        SolrIndexerCommiter.postData(sb.toString());
+        SolrIndexerCommiter.postData("<commit/>");
+    }
+
+    public void indexDocOffers(String uniqueCode) throws NamingException, SQLException, IOException, SolrServerException, Exception {
+        Connection conn = DbUtils.getConnection();
+        String sql = "SELECT offer,datum, ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
+                + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, "
+                + "ZaznamOffer.fields, ZaznamOffer.knihovna, ZaznamOffer.pr_knihovna, ZaznamOffer.pr_timestamp "
+                + "FROM ZaznamOffer "
+                + "JOIN offer ON offer.offer_id=ZaznamOffer.offer where offer.closed=? and ZaznamOffer.uniquecode=?";
+        PreparedStatement ps = conn.prepareStatement(sql);
+        ps.setBoolean(1, true);
+        ps.setString(2, uniqueCode);
+        ResultSet rs = ps.executeQuery();
+        StringBuilder sb = new StringBuilder();
+        sb.append("<add>");
+        while (rs.next()) {
+            if (jobData.isInterrupted()) {
+                logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                break;
+            }
+            SolrDocument sdoc = Storage.getDocByCode(rs.getString("uniquecode"));
+            if (sdoc != null) {
+                sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getDate("datum"),
+                        (String) sdoc.getFieldValue("code"),
+                        (String) sdoc.getFieldValue("code_type"),
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
+            } else {
+                sb.append(doIndexOfferXml(rs.getInt("offer"),
+                        rs.getDate("datum"),
+                        rs.getString("uniquecode"),
+                        "",
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
+            }
+
+        }
+        sb.append("</add>");
+        SolrIndexerCommiter.postData(sb.toString());
+        SolrIndexerCommiter.postData("<commit/>");
+    }
+
     public void indexDoc(String uniqueCode) throws Exception {
 
         try {
@@ -683,6 +775,8 @@ public class Indexer {
             }
             sb.append("</add>");
             SolrIndexerCommiter.postData(sb.toString());
+            removeDocOffers(uniqueCode);
+            indexDocOffers(uniqueCode);
             SolrIndexerCommiter.postData("<commit/>");
             logger.log(Level.INFO, "REINDEX FINISHED. Total docs: {0}", total);
         } catch (Exception ex) {
@@ -729,7 +823,7 @@ public class Indexer {
     private void index() throws Exception {
         update(null);
         Date date = new Date();
-        
+
         String to = sdf.format(date);
 
         statusJson.put(LAST_UPDATE, to);
