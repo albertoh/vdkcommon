@@ -233,9 +233,11 @@ public class Indexer {
         sb.append("<field name=\"nabidka\" update=\"add\">")
                 .append(offerid)
                 .append("</field>");
-        sb.append("<field name=\"nabidka_datum\" update=\"add\">")
-                .append(sdf.format(datum))
-                .append("</field>");
+        if(pr_knihovna == null){
+            sb.append("<field name=\"nabidka_datum\" update=\"add\">")
+                    .append(sdf.format(datum))
+                    .append("</field>");
+        }
         JSONObject nabidka_ext = new JSONObject();
         JSONObject nabidka_ext_n = new JSONObject();
         nabidka_ext_n.put("zaznamOffer", zaznamoffer_id);
@@ -883,7 +885,7 @@ public class Indexer {
 
     private void writeStatus() throws FileNotFoundException, IOException {
         File statusFile = new File(statusFileName);
-        FileUtils.writeStringToFile(statusFile, statusJson.toString());
+        FileUtils.writeStringToFile(statusFile, statusJson.toString(), "UTF-8");
 
     }
 
@@ -908,6 +910,10 @@ public class Indexer {
 
                 if (!jobData.getBoolean("full_index", false)) {
                     reindexDoc(doc.getString("code"), doc.getString("id"));
+                    if (doc.has("timestamp")) {
+                        statusJson.put(LAST_UPDATE, doc.getString("timestamp"));
+                        writeStatus();
+                    }
                 } else {
                     boolean bohemika = false;
                     if (doc.has("bohemika")) {
@@ -921,7 +927,7 @@ public class Indexer {
                             (String) doc.getString("code_type"),
                             (String) doc.getString("id"),
                             bohemika));
-                    if (doc.has("timestamp")) {
+                    if (!doc.optString("timestamp").equals("")) {
                         statusJson.put(LAST_UPDATE, doc.getString("timestamp"));
                     }
                     if (total % 1000 == 0) {

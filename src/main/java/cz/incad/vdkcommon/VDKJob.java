@@ -3,25 +3,15 @@ package cz.incad.vdkcommon;
 
 import cz.incad.vdkcommon.oai.*;
 import cz.incad.vdkcommon.solr.Indexer;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.json.JSONObject;
-import static org.quartz.DateBuilder.evenMinuteDate;
 import org.quartz.InterruptableJob;
-import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
-import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
-import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
-import org.quartz.Trigger;
-import static org.quartz.TriggerBuilder.newTrigger;
 import org.quartz.UnableToInterruptJobException;
-import org.quartz.core.jmx.JobDataMapSupport;
 
 /**
  *
