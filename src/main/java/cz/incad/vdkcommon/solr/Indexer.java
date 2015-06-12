@@ -1,7 +1,18 @@
 /*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
+ * Copyright (C) 2013-2015 Alberto Hernandez
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 package cz.incad.vdkcommon.solr;
 
@@ -100,7 +111,6 @@ public class Indexer {
         } else {
             statusFileName = jobData.getStatusFile();
         }
-        readStatus();
     }
 
     public void clean() throws Exception {
@@ -166,6 +176,7 @@ public class Indexer {
                     rs.getString("exemplar"),
                     "add"));
         }
+        rs.close();
         sb.append("</add>");
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
@@ -203,6 +214,7 @@ public class Indexer {
             }
             sb.append("</doc>");
         }
+        rs.close();
         sb.append("</add>");
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
@@ -302,6 +314,7 @@ public class Indexer {
                         rs.getString("fields")));
             }
         }
+        rs.close();
         sb.append("</add>");
         logger.log(Level.FINE, "adding {0}", sb.toString());
         SolrIndexerCommiter.postData(sb.toString());
@@ -529,6 +542,7 @@ public class Indexer {
             }
             sb.append("</doc>");
         }
+        rs.close();
         sb.append("</add>");
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
@@ -575,6 +589,7 @@ public class Indexer {
 
             sb.append("</doc>");
         }
+        rs.close();
         sb.append("</add>");
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
@@ -623,6 +638,7 @@ public class Indexer {
             }
 
         }
+        rs.close();
         sb.append("</add>");
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
@@ -695,6 +711,7 @@ public class Indexer {
 
     public void indexDocOffers(String uniqueCode) throws NamingException, SQLException, IOException, SolrServerException, Exception {
         Connection conn = DbUtils.getConnection();
+        try{
         String sql = "SELECT offer,datum, ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
                 + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, "
                 + "ZaznamOffer.fields, ZaznamOffer.knihovna, ZaznamOffer.pr_knihovna, ZaznamOffer.pr_timestamp "
@@ -737,9 +754,15 @@ public class Indexer {
             }
 
         }
+        rs.close();
         sb.append("</add>");
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
+        }finally{
+            if(conn!= null && !conn.isClosed()){
+                conn.close();
+            }
+        }
     }
 
     public void indexDoc(String uniqueCode) throws Exception {
@@ -833,6 +856,8 @@ public class Indexer {
     }
 
     public void run() throws Exception {
+        
+        readStatus();
         if (jobData.getBoolean("full_index", false)) {
             reindex();
         } else {
