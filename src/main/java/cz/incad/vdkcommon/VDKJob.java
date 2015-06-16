@@ -48,7 +48,10 @@ public class VDKJob implements InterruptableJob {
             jobdata.load();
             jobdata.setInterrupted(false);
 
-            if(jobdata.getType().equalsIgnoreCase("harvest")){
+            if(jobdata.getType().equalsIgnoreCase("admin")){
+                AdminJob aj = new AdminJob(jobdata);
+                aj.run();
+            }else if(jobdata.getType().equalsIgnoreCase("harvest")){
                 OAIHarvester oh = new OAIHarvester(new HarvesterJobData(jobdata));
                 oh.harvest();
             }else if(jobdata.getType().equalsIgnoreCase("index")){

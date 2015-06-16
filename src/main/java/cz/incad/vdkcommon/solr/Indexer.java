@@ -281,7 +281,7 @@ public class Indexer {
         String sql = "SELECT offer.datum, ZaznamOffer.zaznamoffer_id, ZaznamOffer.offer, "
                 + "ZaznamOffer.knihovna, ZaznamOffer.pr_knihovna, "
                 + "ZaznamOffer.uniqueCode, ZaznamOffer.zaznam, ZaznamOffer.exemplar, ZaznamOffer.fields "
-                + "FROM zaznamOffer where offer.offer_id=zaznamOffer.offer and zaznamOffer.offer=?";
+                + "FROM zaznamOffer, offer where offer.offer_id=zaznamOffer.offer and zaznamOffer.offer=?";
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setInt(1, id);
 

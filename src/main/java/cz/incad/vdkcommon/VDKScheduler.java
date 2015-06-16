@@ -112,44 +112,5 @@ public class VDKScheduler {
         }
     }
     
-    public static void addIndexerJob() throws SchedulerException, Exception {
-
-        org.quartz.Scheduler sched = VDKScheduler.getInstance().getScheduler();
-        Map<String, Object> map = new HashMap<String, Object>();
-        JSONObject js =new JSONObject();
-        js.put("harvest", false);
-        js.put("index", true);
-        VDKJobData jobdata = new VDKJobData("indexer", js);
-        map.put("jobdata", jobdata);
-        JobDataMap data = JobDataMapSupport.newJobDataMap(map);
-
-        JobDetail job = JobBuilder.newJob(VDKJob.class)
-                .withIdentity("indexer")
-                .setJobData(data)
-                .build();
-        if (sched.checkExists(job.getKey())) {
-            sched.deleteJob(job.getKey());
-        }
-        
-        File cfgFile = new File(System.getProperty("user.home") + File.separator + 
-                ".vdkcr" + File.separator + "jobs" + File.separator + 
-                Options.getInstance().getString("indexerCfg", "indexer.json"));
-
-        if (cfgFile.exists()) {
-            JSONObject statusJson = new JSONObject(FileUtils.readFileToString(cfgFile, "UTF-8"));
-            String cronVal = statusJson.optString("cron", "");
-        
-            if(cronVal.equals("")){
-                LOGGER.log(Level.INFO, "Cron for index cleared ");
-            }else{
-                CronTrigger trigger = TriggerBuilder.newTrigger()
-                        .withIdentity("trigger_indexer")
-                        .withSchedule(CronScheduleBuilder.cronSchedule(cronVal))
-                        .build();
-                sched.scheduleJob(job, trigger);
-                LOGGER.log(Level.INFO, "Cron for index scheduled with {0}", cronVal);
-            }
-        } 
-    }
     
 }

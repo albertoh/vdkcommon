@@ -15,5 +15,11 @@
         "f.rokvydani.facet.limit": -1,
         "f.rokvydani.facet.sort": false
     },
-    "expirationDays": 7
+    "expirationDays": 7,
+    
+    "admin.email": "email@email.com",
+    "admin.email.offer.subject": "VDK Notification. Offer expired",
+    
+    "admin.email.offer.body": "Offer %s has expired. Click on %s to view report",
+    "app.url": "localhost:8080/vdk"
 }
