@@ -20,6 +20,6 @@
     "admin.email": "email@email.com",
     "admin.email.offer.subject": "VDK Notification. Offer expired",
     
-    "admin.email.offer.body": "Offer %s has expired. Click on %s to view report",
+    "admin.email.offer.body": "Offer ${offer.nazev} has expired. Click on ${offer.report} to view report",
     "app.url": "localhost:8080/vdk"
 }

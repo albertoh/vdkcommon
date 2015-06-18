@@ -127,7 +127,9 @@ public class AdminJob {
 
             // Now set the actual message
             String link = opts.getString("app.url") + "/reports/protocol.vm?id=" + offerId;
-            String body = String.format(opts.getString("admin.email.offer.body"), offerName, link);
+            String body = opts.getString("admin.email.offer.body")
+                    .replace("${offer.nazev}", offerName)
+                    .replace("${offer.link}", link);
             message.setText(body);
 
             // Send message
