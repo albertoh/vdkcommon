@@ -112,27 +112,19 @@ public class AdminJob {
             Properties properties = System.getProperties();
             Session session = Session.getDefaultInstance(properties);
 
-            // Create a default MimeMessage object.
             MimeMessage message = new MimeMessage(session);
-
-            // Set From: header field of the header.
             message.setFrom(new InternetAddress(from));
-
-            // Set To: header field of the header.
             message.addRecipient(Message.RecipientType.TO,
                     new InternetAddress(to));
-
-            // Set Subject: header field
+            
             message.setSubject(opts.getString("admin.email.offer.subject"));
-
-            // Now set the actual message
+            
             String link = opts.getString("app.url") + "/reports/protocol.vm?id=" + offerId;
             String body = opts.getString("admin.email.offer.body")
                     .replace("${offer.nazev}", offerName)
-                    .replace("${offer.link}", link);
+                    .replace("${offer.report}", link);
             message.setText(body);
 
-            // Send message
             Transport.send(message);
             LOGGER.fine("Sent message successfully....");
         } catch (MessagingException ex) {

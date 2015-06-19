@@ -4,16 +4,15 @@
     "indexerXSL": "vdk_md5.xsl",
     "indexerIdXSL": "vdk_id.xsl",
     "facets": ["{!ex=dt}zdroj", 
-                "rokvydani", 
                 "bohemika",
-                "ldr19",
                 "status",
                 "pocet_exemplaru"
                 ],
-    "user_facets": ["nabidka", "poptavka"],
+    "user_facets": [],
     "otherParams":{
-        "f.rokvydani.facet.limit": -1,
-        "f.rokvydani.facet.sort": false
+        "stats":"true",
+        "stats.field":"rokvydani"
+        
     },
     "expirationDays": 7,
     
