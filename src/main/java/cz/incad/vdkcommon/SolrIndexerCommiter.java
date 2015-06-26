@@ -20,41 +20,42 @@ import org.apache.solr.client.solrj.impl.HttpSolrServer;
  */
 public class SolrIndexerCommiter {
 
-//    public static String HOST = "http://localhost:8080/solr";
-//    public static String CORE = "vdk_md5";
+    private static HttpSolrServer _server;
 
     public static SolrServer getServer() throws IOException {
         Options opts = Options.getInstance();
         return getServer(opts.getString("solrCore", "vdk_md5"));
     }
-    
+
     public static SolrServer getServer(String core) throws IOException {
-        Options opts = Options.getInstance();
-        HttpSolrServer server = new HttpSolrServer(String.format("%s/%s/", 
-                opts.getString("solrHost", "http://localhost:8080/solr"), 
-                core));
-        server.setMaxRetries(1); // defaults to 0.  > 1 not recommended.
-        server.setConnectionTimeout(5000); // 5 seconds to establish TCP
-        
+        if (_server == null) {
+            Options opts = Options.getInstance();
+             _server = new HttpSolrServer(String.format("%s/%s/",
+                    opts.getString("solrHost", "http://localhost:8080/solr"),
+                    core));
+            _server.setMaxRetries(1); // defaults to 0.  > 1 not recommended.
+            _server.setConnectionTimeout(5000); // 5 seconds to establish TCP
+
         // The following settings are provided here for completeness.
-        // They will not normally be required, and should only be used 
-        // after consulting javadocs to know whether they are truly required.
-        server.setSoTimeout(1000);  // socket read timeout
-        server.setDefaultMaxConnectionsPerHost(100);
-        server.setMaxTotalConnections(100);
-        server.setFollowRedirects(false);  // defaults to false
-        
+            // They will not normally be required, and should only be used 
+            // after consulting javadocs to know whether they are truly required.
+            _server.setSoTimeout(1000);  // socket read timeout
+            _server.setDefaultMaxConnectionsPerHost(100);
+            _server.setMaxTotalConnections(100);
+            _server.setFollowRedirects(false);  // defaults to false
+
         // allowCompression defaults to false.
-        // Server side must support gzip or deflate for this to have any effect.
-        server.setAllowCompression(true);
-        return server;
+            // Server side must support gzip or deflate for this to have any effect.
+            _server.setAllowCompression(true);
+        }
+        return _server;
     }
 
     public static String postData(String dataStr)
             throws Exception {
         Options opts = Options.getInstance();
-        return postData(String.format("%s/%s/update", 
-                opts.getString("solrHost", "http://localhost:8080/solr"), 
+        return postData(String.format("%s/%s/update",
+                opts.getString("solrHost", "http://localhost:8080/solr"),
                 opts.getString("solrCore", "vdk_md5")), dataStr);
     }
 

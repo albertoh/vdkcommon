@@ -87,6 +87,10 @@ public class Options {
         return ret;
     }
     
+    public JSONArray getJSONArray(String key){
+        return conf.optJSONArray(key);
+    }
+    
     public JSONObject getJSONObject(String key){
         return conf.optJSONObject(key);
     }

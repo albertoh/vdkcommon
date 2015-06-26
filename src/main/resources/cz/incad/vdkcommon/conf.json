@@ -16,6 +16,7 @@
     },
     "expirationDays": 7,
     
+    "admin.users.levels": [1,2,3],
     "admin.email": "email@email.com",
     "admin.email.offer.subject": "VDK Notification. Offer expired",
     
