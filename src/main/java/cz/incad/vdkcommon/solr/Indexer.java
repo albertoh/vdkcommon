@@ -44,7 +44,6 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -64,6 +63,7 @@ public class Indexer {
 
     int total = 0;
     int offerIndexed = 0;
+    int demandIndexed = 0;
     String errorMsg = "";
 
     private final String LAST_UPDATE = "last_run";
@@ -124,9 +124,6 @@ public class Indexer {
     public void clean() throws Exception {
         logger.log(Level.FINE, "Cleaning index...");
         SolrIndexerCommiter.getServer().deleteByQuery("*:*");
-//        String s = "<delete><query>*:*</query></delete>";
-//        SolrIndexerCommiter.postData(s);
-//        SolrIndexerCommiter.postData("<commit/>");
         logger.log(Level.INFO, "Index cleaned");
     }
 
@@ -137,56 +134,26 @@ public class Indexer {
         indexAllDemands();
         indexAllWanted();
     }
-    
+
     private SolrInputDocument demandDoc(String knihovna,
             String docCode,
             String zaznam,
             String exemplar,
-            String update){
-        SolrInputDocument doc = new SolrInputDocument();
+            String update) {
 
         JSONObject j = new JSONObject();
         j.put("knihovna", knihovna);
         j.put("code", docCode);
         j.put("zaznam", zaznam);
         j.put("exemplar", exemplar);
-        
+
+        SolrInputDocument doc = new SolrInputDocument();
         doc.addField("code", docCode);
         doc.addField("md5", docCode);
         addField(doc, "poptavka", knihovna, update);
         addField(doc, "poptavka_ext", j, update);
-        
+
         return doc;
-    }
-
-    private StringBuilder doIndexDemandXml(String knihovna,
-            String docCode,
-            String zaznam,
-            String exemplar,
-            String update) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<doc>");
-        sb.append("<field name=\"code\">")
-                .append(docCode)
-                .append("</field>");
-        sb.append("<field name=\"md5\">")
-                .append(docCode)
-                .append("</field>");
-
-        sb.append("<field name=\"poptavka\" update=\"").append(update).append("\">")
-                .append(knihovna)
-                .append("</field>");
-        JSONObject j = new JSONObject();
-        j.put("knihovna", knihovna);
-        j.put("code", docCode);
-        j.put("zaznam", zaznam);
-        j.put("exemplar", exemplar);
-        sb.append("<field name=\"poptavka_ext\" update=\"").append(update).append("\">")
-                .append(j)
-                .append("</field>");
-
-        sb.append("</doc>");
-        return sb;
     }
 
     public void indexAllDemands() throws Exception {
@@ -196,20 +163,21 @@ public class Indexer {
                 + "FROM zaznamDemand, Knihovna "
                 + "where zaznamDemand.knihovna=knihovna.knihovna_id ";
         PreparedStatement ps = conn.prepareStatement(sql);
-        ResultSet rs = ps.executeQuery();
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add>");
-        while (rs.next()) {
-            sb.append(doIndexDemandXml(rs.getString("code"),
-                    rs.getString("uniqueCode"),
-                    rs.getString("zaznam"),
-                    rs.getString("exemplar"),
-                    "add"));
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                server.add(demandDoc(rs.getString("code"),
+                        rs.getString("uniqueCode"),
+                        rs.getString("zaznam"),
+                        rs.getString("exemplar"),
+                        "add"));
+                demandIndexed++;
+                if (demandIndexed % 100 == 0) {
+                    server.commit();
+                    writeStatus();
+                }
+            }
         }
-        rs.close();
-        sb.append("</add>");
-        SolrIndexerCommiter.postData(sb.toString());
-        SolrIndexerCommiter.postData("<commit/>");
+        server.commit();
     }
 
     public void indexWanted(int wanted_id) throws Exception {
@@ -220,88 +188,22 @@ public class Indexer {
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setInt(1, wanted_id);
 
-        ResultSet rs = ps.executeQuery();
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String uniquecode = rs.getString("uniquecode");
+                SolrInputDocument doc = new SolrInputDocument();
+                doc.addField("code", uniquecode);
+                doc.addField("md5", uniquecode);
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add>");
-        while (rs.next()) {
-            sb.append("<doc>");
-            String uniquecode = rs.getString("uniquecode");
-            sb.append("<field name=\"code\">")
-                    .append(uniquecode)
-                    .append("</field>");
-            sb.append("<field name=\"md5\">")
-                    .append(uniquecode)
-                    .append("</field>");
-            if (rs.getBoolean(1)) {
-                sb.append("<field name=\"chci\" update=\"add\">")
-                        .append(rs.getString("code"))
-                        .append("</field>");
-            } else {
-                sb.append("<field name=\"nechci\" update=\"add\">")
-                        .append(rs.getString("code"))
-                        .append("</field>");
+                if (rs.getBoolean(1)) {
+                    addField(doc, "chci", rs.getString("code"), "add");
+                } else {
+                    addField(doc, "nechci", rs.getString("code"), "add");
+                }
+                server.add(doc);
             }
-            sb.append("</doc>");
         }
-        rs.close();
-        sb.append("</add>");
-        SolrIndexerCommiter.postData(sb.toString());
-        SolrIndexerCommiter.postData("<commit/>");
-    }
-
-    private StringBuilder doIndexOfferXml_(int offerid,
-            Date datum,
-            String docCode,
-            String codeType,
-            int zaznamoffer_id,
-            String zaznam,
-            String knihovna,
-            String pr_knihovna,
-            String exemplar,
-            String fields) {
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("<doc>");
-        sb.append("<field name=\"code\">")
-                .append(docCode)
-                .append("</field>");
-        sb.append("<field name=\"md5\">")
-                .append(docCode)
-                .append("</field>");
-        sb.append("<field name=\"code_type\">")
-                .append(codeType)
-                .append("</field>");
-        sb.append("<field name=\"nabidka\" update=\"add\">")
-                .append(offerid)
-                .append("</field>");
-        if (pr_knihovna == null) {
-            sb.append("<field name=\"nabidka_datum\" update=\"add\">")
-                    .append(sdf.format(datum))
-                    .append("</field>");
-        }
-        JSONObject nabidka_ext = new JSONObject();
-        JSONObject nabidka_ext_n = new JSONObject();
-        nabidka_ext_n.put("zaznamOffer", zaznamoffer_id);
-        nabidka_ext_n.put("code", docCode);
-        nabidka_ext_n.put("zaznam", zaznam);
-        nabidka_ext_n.put("knihovna", knihovna);
-        nabidka_ext_n.put("pr_knihovna", pr_knihovna);
-        nabidka_ext_n.put("ex", exemplar);
-        nabidka_ext_n.put("datum", datum);
-        nabidka_ext_n.put("fields", new JSONObject(fields));
-        nabidka_ext.put("" + offerid, nabidka_ext_n);
-        sb.append("<field name=\"nabidka_ext\" update=\"add\">")
-                .append(StringEscapeUtils.escapeXml(nabidka_ext.toString()))
-                .append("</field>");
-
-        if (pr_knihovna != null) {
-            sb.append("<field name=\"chci\" update=\"add\">")
-                    .append(pr_knihovna)
-                    .append("</field>");
-        }
-        sb.append("</doc>");
-        return sb;
+        server.commit();
     }
 
     public void indexOffer(int id) throws Exception {
@@ -315,27 +217,23 @@ public class Indexer {
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setInt(1, id);
 
-        ResultSet rs = ps.executeQuery();
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add>");
-        while (rs.next()) {
-            server.add(offerDoc(rs.getInt("offer"),
-                    rs.getDate("datum"),
-                    rs.getString("uniquecode"),
-                    rs.getInt("zaznamoffer_id"),
-                    rs.getString("zaznam"),
-                    rs.getString("knihovna"),
-                    rs.getString("pr_knihovna"),
-                    rs.getString("exemplar"),
-                    rs.getString("fields")));
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                server.add(offerDoc(rs.getInt("offer"),
+                        rs.getDate("datum"),
+                        rs.getString("uniquecode"),
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
 
-            offerIndexed++;
+                offerIndexed++;
 
+            }
         }
-        rs.close();
-        sb.append("</add>");
-        logger.log(Level.FINE, "adding {0}", sb.toString());
-        SolrIndexerCommiter.postData(sb.toString());
+        server.commit();
         offerIndexed++;
         //SolrIndexerCommiter.postData("<commit/>");
     }
@@ -442,16 +340,13 @@ public class Indexer {
             String zaznam,
             String exemplar) throws Exception {
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add>");
-        sb.append(doIndexDemandXml(knihovna,
+        server.add(demandDoc(knihovna,
                 docCode,
                 zaznam,
                 exemplar,
                 "add"));
-        sb.append("</add>");
-        SolrIndexerCommiter.postData(sb.toString());
-        SolrIndexerCommiter.postData("<commit/>");
+        demandIndexed++;
+        server.commit();
     }
 
     public void removeAllDemands() throws Exception {
@@ -495,36 +390,24 @@ public class Indexer {
             String zaznam,
             String exemplar) throws Exception {
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add>");
-        sb.append(doIndexDemandXml(knihovna,
+        server.add(demandDoc(knihovna,
                 docCode,
                 zaznam,
                 exemplar,
                 "remove"));
-        sb.append("</add>");
-        logger.log(Level.INFO, sb.toString());
-        SolrIndexerCommiter.postData(sb.toString());
-        SolrIndexerCommiter.postData("<commit/>");
+        demandIndexed++;
+        server.commit();
     }
 
-    private void removeWanted(String knihovna, String code, String codeType) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add><doc>");
-        sb.append("<field name=\"code\">")
-                .append(code)
-                .append("</field>");
-        sb.append("<field name=\"md5\">")
-                .append(code)
-                .append("</field>");
-        sb.append("<field name=\"code_type\">")
-                .append(codeType)
-                .append("</field>");
-        sb.append("<field name=\"chci\" update=\"remove\">").append(knihovna).append("</field>");
-        sb.append("<field name=\"nechci\" update=\"remove\">").append(knihovna).append("</field>");
-        sb.append("</doc></add>");
-        SolrIndexerCommiter.postData(sb.toString());
-        SolrIndexerCommiter.postData("<commit/>");
+    private void removeWanted(String knihovna, String code) throws Exception {
+        SolrInputDocument doc = new SolrInputDocument();
+        doc.addField("code", code);
+        doc.addField("md5", code);
+        addField(doc, "chci", knihovna, "remove");
+        addField(doc, "nechci", knihovna, "remove");
+
+        server.add(doc);
+        server.commit();
     }
 
     public void indexAllWanted() throws Exception {
@@ -533,38 +416,28 @@ public class Indexer {
                 + "where w.knihovna=k.knihovna_id and zo.zaznamoffer_id=w.zaznamoffer";
         PreparedStatement ps = conn.prepareStatement(sql);
 
-        ResultSet rs = ps.executeQuery();
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                if (jobData.isInterrupted()) {
+                    logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                    break;
+                }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add>");
-        while (rs.next()) {
-            if (jobData.isInterrupted()) {
-                logger.log(Level.INFO, "INDEXER INTERRUPTED");
-                break;
+                SolrInputDocument doc = new SolrInputDocument();
+                String uniquecode = rs.getString("uniquecode");
+                doc.addField("code", uniquecode);
+                doc.addField("md5", uniquecode);
+
+                if (rs.getBoolean(1)) {
+                    addField(doc, "chci", rs.getString("code"), "add");
+                } else {
+                    addField(doc, "nechci", rs.getString("code"), "add");
+                }
+                server.add(doc);
+
             }
-            sb.append("<doc>");
-            String uniquecode = rs.getString("uniquecode");
-            sb.append("<field name=\"code\">")
-                    .append(uniquecode)
-                    .append("</field>");
-            sb.append("<field name=\"md5\">")
-                    .append(uniquecode)
-                    .append("</field>");
-            if (rs.getBoolean(1)) {
-                sb.append("<field name=\"chci\" update=\"add\">")
-                        .append(rs.getString("code"))
-                        .append("</field>");
-            } else {
-                sb.append("<field name=\"nechci\" update=\"add\">")
-                        .append(rs.getString("code"))
-                        .append("</field>");
-            }
-            sb.append("</doc>");
         }
-        rs.close();
-        sb.append("</add>");
-        SolrIndexerCommiter.postData(sb.toString());
-        SolrIndexerCommiter.postData("<commit/>");
+        server.commit();
     }
 
     public void removeOffer(int id) throws Exception {
@@ -613,8 +486,8 @@ public class Indexer {
         SolrIndexerCommiter.postData(sb.toString());
         SolrIndexerCommiter.postData("<commit/>");
     }
-    
-    private void addField(SolrInputDocument doc, String name, Object value, String modifier){
+
+    private void addField(SolrInputDocument doc, String name, Object value, String modifier) {
         Map<String, Object> map = new HashMap();
         map.put(modifier, value);
         doc.addField(name, map);
@@ -637,7 +510,6 @@ public class Indexer {
 
         addField(doc, "nabidka", offerid, "add");
         addField(doc, "nabidka_datum", datum, "add");
-        
 
         JSONObject nabidka_ext = new JSONObject();
         JSONObject nabidka_ext_n = new JSONObject();
@@ -669,37 +541,30 @@ public class Indexer {
                 + "JOIN offer ON offer.offer_id=zaznamOffer.offer where offer.closed=?";
         PreparedStatement ps = conn.prepareStatement(sql);
         ps.setBoolean(1, true);
-        ResultSet rs = ps.executeQuery();
-        StringBuilder sb = new StringBuilder();
-        sb.append("<add>");
-        while (rs.next()) {
-            if (jobData.isInterrupted()) {
-                logger.log(Level.INFO, "INDEXER INTERRUPTED");
-                break;
-            }
-            server.add(offerDoc(rs.getInt("offer"),
-                    rs.getDate("datum"),
-                    rs.getString("uniquecode"),
-                    rs.getInt("zaznamoffer_id"),
-                    rs.getString("zaznam"),
-                    rs.getString("knihovna"),
-                    rs.getString("pr_knihovna"),
-                    rs.getString("exemplar"),
-                    rs.getString("fields")));
-            offerIndexed++;
-            if (offerIndexed % 100 == 0) {
-                server.commit();
-                writeStatus();
-            }
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                if (jobData.isInterrupted()) {
+                    logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                    break;
+                }
+                server.add(offerDoc(rs.getInt("offer"),
+                        rs.getDate("datum"),
+                        rs.getString("uniquecode"),
+                        rs.getInt("zaznamoffer_id"),
+                        rs.getString("zaznam"),
+                        rs.getString("knihovna"),
+                        rs.getString("pr_knihovna"),
+                        rs.getString("exemplar"),
+                        rs.getString("fields")));
+                offerIndexed++;
+                if (offerIndexed % 100 == 0) {
+                    server.commit();
+                    writeStatus();
+                }
 
+            }
         }
-        rs.close();
         server.commit();
-
-//        sb.append("</add>");
-//
-//        SolrIndexerCommiter.postData(sb.toString());
-//        SolrIndexerCommiter.postData("<commit/>");
     }
 
     public void reindexDocByIdentifier(String identifier) throws Exception {
@@ -719,7 +584,7 @@ public class Indexer {
 
     public void reindexDoc(String uniqueCode, String identifier) throws Exception {
 
-        String oldUniqueCode = null;
+        String oldUniqueCode;
         SolrQuery query = new SolrQuery("id:\"" + identifier + "\"");
         query.addField("id,code");
         query.setRows(1000);
@@ -778,30 +643,26 @@ public class Indexer {
             PreparedStatement ps = conn.prepareStatement(sql);
             ps.setBoolean(1, true);
             ps.setString(2, uniqueCode);
-            ResultSet rs = ps.executeQuery();
-            StringBuilder sb = new StringBuilder();
-            sb.append("<add>");
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if (jobData.isInterrupted()) {
+                        logger.log(Level.INFO, "INDEXER INTERRUPTED");
+                        break;
+                    }
+                    server.add(offerDoc(rs.getInt("offer"),
+                            rs.getDate("datum"),
+                            rs.getString("uniquecode"),
+                            rs.getInt("zaznamoffer_id"),
+                            rs.getString("zaznam"),
+                            rs.getString("knihovna"),
+                            rs.getString("pr_knihovna"),
+                            rs.getString("exemplar"),
+                            rs.getString("fields")));
 
-            while (rs.next()) {
-                if (jobData.isInterrupted()) {
-                    logger.log(Level.INFO, "INDEXER INTERRUPTED");
-                    break;
+                    offerIndexed++;
+
                 }
-                server.add(offerDoc(rs.getInt("offer"),
-                        rs.getDate("datum"),
-                        rs.getString("uniquecode"),
-                        rs.getInt("zaznamoffer_id"),
-                        rs.getString("zaznam"),
-                        rs.getString("knihovna"),
-                        rs.getString("pr_knihovna"),
-                        rs.getString("exemplar"),
-                        rs.getString("fields")));
-
-                offerIndexed++;
-
             }
-            rs.close();
-            sb.append("</add>");
             server.commit();
         } finally {
             if (conn != null && !conn.isClosed()) {
@@ -993,7 +854,7 @@ public class Indexer {
                         writeStatus();
                     }
                 } else {
-                    boolean bohemika = false;
+                    boolean bohemika;
                     if (doc.has("bohemika")) {
                         bohemika = (Boolean) doc.getBoolean("bohemika");
                     } else {

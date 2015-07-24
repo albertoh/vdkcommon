@@ -4,6 +4,7 @@
     "indexerXSL": "vdk_md5.xsl",
     "indexerIdXSL": "vdk_id.xsl",
     "facets": ["{!ex=dt}zdroj", 
+		"nabidka",
                 "bohemika",
                 "status",
                 "pocet_exemplaru"
