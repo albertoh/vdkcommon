@@ -107,7 +107,7 @@ public class AdminJob {
     }
 
     private void sendMail(String to, String offerName, String offerId) {
-            String from = opts.getString("admin.email");
+        String from = opts.getString("admin.email");
         try {
             Properties properties = System.getProperties();
             Session session = Session.getDefaultInstance(properties);

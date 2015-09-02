@@ -18,6 +18,7 @@ package cz.incad.vdkcommon.solr;
 
 import cz.incad.vdkcommon.Bohemika;
 import cz.incad.vdkcommon.DbUtils;
+import cz.incad.vdkcommon.Knihovna;
 import cz.incad.vdkcommon.Options;
 import cz.incad.vdkcommon.SolrIndexerCommiter;
 import cz.incad.vdkcommon.VDKJobData;
@@ -35,8 +36,15 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
 import javax.naming.NamingException;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
@@ -746,8 +754,65 @@ public class Indexer {
             }
 
             total++;
+            checkDemand(code);
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Error storing doc with " + sb.toString(), ex);
+        }
+    }
+    
+    private void checkDemand(String code){
+        try {
+            SolrQuery query = new SolrQuery("code:\"" + code + "\"");
+            query.addField("id,code,poptavka_ext,title");
+            query.setRows(1000);
+            SolrDocumentList docs = IndexerQuery.query(query);
+            Iterator<SolrDocument> iter = docs.iterator();
+            while (iter.hasNext()) {
+                sendDemandMail(iter.next());
+                
+            }
+        } catch (SolrServerException | IOException ex) {
+            logger.log(Level.SEVERE, null, ex);
+        }
+    }
+    
+    private void sendDemandMail(SolrDocument resultDoc){
+        try {
+            String title =(String) resultDoc.getFieldValue("title");
+            String pop = (String) resultDoc.getFieldValue("poptavka_ext");
+                JSONObject j = new JSONObject(pop);
+                
+            String from = opts.getString("admin.email");
+            Knihovna kn = new Knihovna(j.getString("knihovna"));
+            String to = kn.getEmail();
+            String zaznam = j.optString("zaznam");
+            String code = j.optString("code");
+            String exemplar = j.optString("exemplar");
+            try {
+                Properties properties = System.getProperties();
+                Session session = Session.getDefaultInstance(properties);
+                
+                MimeMessage message = new MimeMessage(session);
+                message.setFrom(new InternetAddress(from));
+                message.addRecipient(Message.RecipientType.TO,
+                        new InternetAddress(to));
+                
+                message.setSubject(opts.getString("admin.email.demand.subject"));
+                
+                String link = opts.getString("app.url") + "/?code=" + code;
+                String body = opts.getString("admin.email.demand.body")
+                        .replace("${demand.title}", title)
+                        .replace("${demand.url}", link);
+                message.setText(body);
+                
+                Transport.send(message);
+                logger.fine("Sent message successfully....");
+            } catch (MessagingException ex) {
+                logger.log(Level.SEVERE, "Error sending email to: {0}, from {1} ", new Object[]{to, from});
+                logger.log(Level.SEVERE, null, ex);
+            }
+        } catch (NamingException | SQLException ex) {
+            logger.log(Level.SEVERE, null, ex);
         }
     }
 
